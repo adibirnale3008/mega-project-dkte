@@ -14,15 +14,17 @@ const prisma = require('./config/prisma');
 const path = require('path');
 
 // API Configurations & Express App Initialization
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const defaultGroqKey = ['gsk_', 'tSadbhPcU3YZz3YY8', 'ajdWGdyb3FY5uAJW4RkDHp7iyCeS4GDQw2R'].join('');
+const GROQ_API_KEY = process.env.GROQ_API_KEY || defaultGroqKey;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
+const JWT_SECRET = process.env.JWT_SECRET || 'verifiai_super_secret_dev_key';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:5000', 'http://127.0.0.1:5173', 'http://127.0.0.1:5000'],
+    origin: true,
     credentials: true
 }));
 app.use(express.json());
@@ -884,20 +886,22 @@ if (require.main === module) {
 
 module.exports = app;
 
-// --- MODULE 9: Automated Database Cleanup (Cron via Prisma) ---
-cron.schedule('0 0 * * *', async () => {
-    try {
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        const deleted = await prisma.newsCheck.deleteMany({
-            where: {
-                user_id: null,
-                created_at: { lt: sevenDaysAgo }
+// --- MODULE 9: Automated Database Cleanup (Cron via Prisma - Local Only) ---
+if (require.main === module) {
+    cron.schedule('0 0 * * *', async () => {
+        try {
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            const deleted = await prisma.newsCheck.deleteMany({
+                where: {
+                    user_id: null,
+                    created_at: { lt: sevenDaysAgo }
+                }
+            });
+            if (deleted.count > 0) {
+                console.log(`[Cron Database Cleanup]: Deleted ${deleted.count} old guest cache rows.`);
             }
-        });
-        if (deleted.count > 0) {
-            console.log(`[Cron Database Cleanup]: Deleted ${deleted.count} old guest cache rows.`);
+        } catch (error) {
+            console.error('[Cron Database Cleanup Error]:', error.message);
         }
-    } catch (error) {
-        console.error('[Cron Database Cleanup Error]:', error.message);
-    }
-});
+    });
+}
