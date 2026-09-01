@@ -9,9 +9,8 @@ const bcrypt = require('bcrypt');
 const cookieParser = require('cookie-parser');
 const cron = require('node-cron');
 
-// Import Sequelize ORM Models
-const { User, NewsCheck } = require('./models');
-const { Op } = require('sequelize');
+// Import Prisma ORM Client
+const prisma = require('./config/prisma');
 const path = require('path');
 
 // API Configurations & Express App Initialization
@@ -62,19 +61,22 @@ app.post('/api/auth/google', async (req, res) => {
         const payload = ticket.getPayload();
         const { sub: google_id, name, email, picture: profile_picture } = payload;
         
-        // --- MODULE 2: Update Users Database via Sequelize ---
-        let user = await User.findOne({ where: { google_id } });
+        // --- MODULE 2: Update Users Database via Prisma ---
+        let user = await prisma.user.findFirst({ where: { google_id } });
 
         if (user) {
             // User exists, log them in & update details if changed
             if (user.name !== name || user.profile_picture !== profile_picture) {
-                user.name = name;
-                user.profile_picture = profile_picture;
-                await user.save();
+                user = await prisma.user.update({
+                    where: { id: user.id },
+                    data: { name, profile_picture }
+                });
             }
         } else {
             // New user, create
-            user = await User.create({ google_id, name, email, profile_picture });
+            user = await prisma.user.create({
+                data: { google_id, name, email, profile_picture, auth_provider: 'google' }
+            });
         }
 
         // --- MODULE 3: Authentication Session (JWT) ---
@@ -135,8 +137,9 @@ const authenticateOptional = (req, res, next) => {
 // Fetch current user details
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
     try {
-        const user = await User.findByPk(req.user.id, {
-            attributes: ['id', 'google_id', 'name', 'email', 'profile_picture', 'auth_provider']
+        const user = await prisma.user.findUnique({
+            where: { id: req.user.id },
+            select: { id: true, google_id: true, name: true, email: true, profile_picture: true, auth_provider: true }
         });
         if (!user) return res.status(404).json({ error: 'User not found' });
         
@@ -175,19 +178,21 @@ app.post('/api/auth/register', async (req, res) => {
         }
 
         // Check for existing user by email
-        const existingUser = await User.findOne({ where: { email } });
+        const existingUser = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
         if (existingUser) {
             return res.status(409).json({ error: 'An account with this email already exists. Please log in.' });
         }
 
         // Hash password and create user
         const password_hash = await bcrypt.hash(password, 12);
-        const user = await User.create({
-            name: name.trim(),
-            email: email.toLowerCase().trim(),
-            password_hash,
-            auth_provider: 'local',
-            google_id: null
+        const user = await prisma.user.create({
+            data: {
+                name: name.trim(),
+                email: email.toLowerCase().trim(),
+                password_hash,
+                auth_provider: 'local',
+                google_id: null
+            }
         });
 
         // Issue JWT cookie
@@ -221,7 +226,7 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         // Find user by email
-        const user = await User.findOne({ where: { email: email.toLowerCase().trim() } });
+        const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
         if (!user || user.auth_provider !== 'local') {
             return res.status(401).json({ error: 'Invalid email or password.' });
         }
@@ -389,11 +394,11 @@ app.post('/api/check-news', authenticateOptional, async (req, res) => {
             });
         }
 
-        // --- MODULE 5: API Response Caching via Sequelize ---
+        // --- MODULE 5: API Response Caching via Prisma ---
         try {
-            const cached = await NewsCheck.findOne({ 
+            const cached = await prisma.newsCheck.findFirst({ 
                 where: { news_text: text },
-                order: [['created_at', 'DESC']]
+                orderBy: { created_at: 'desc' }
             });
 
             // Serve cache ONLY if the cached row contains a valid Groq AI summary
@@ -406,15 +411,17 @@ app.post('/api/check-news', authenticateOptional, async (req, res) => {
             if (cached && !isFallbackSummary) {
                 const user_id = req.user ? req.user.id : null;
                 
-                const newRow = await NewsCheck.create({
-                    news_text: text,
-                    prediction: cached.prediction,
-                    confidence: cached.confidence,
-                    api_verification: cached.api_verification,
-                    ai_summary: cached.ai_summary,
-                    credibility_score: cached.credibility_score,
-                    claim_category: cached.claim_category,
-                    user_id
+                const newRow = await prisma.newsCheck.create({
+                    data: {
+                        news_text: text,
+                        prediction: cached.prediction,
+                        confidence: cached.confidence,
+                        api_verification: cached.api_verification,
+                        ai_summary: cached.ai_summary,
+                        credibility_score: cached.credibility_score,
+                        claim_category: cached.claim_category,
+                        user_id
+                    }
                 });
 
                 // Recalculate quick local manipulation risk
@@ -707,24 +714,26 @@ Respond ONLY with a valid JSON object in strict JSON format:
         // Cap score tightly between 0 - 100
         credibility_score = Math.min(100, Math.max(0, credibility_score));
 
-        // 3. Save result into MySQL Database via Sequelize ORM
+        // 3. Save result into Supabase PostgreSQL Database via Prisma ORM
         const user_id = req.user ? req.user.id : null;
         let recordId = Date.now();
         
         try {
-            const newCheck = await NewsCheck.create({
-                news_text: text,
-                prediction,
-                confidence,
-                api_verification: apiVerification,
-                ai_summary: aiSummary,
-                credibility_score,
-                claim_category,
-                user_id
+            const newCheck = await prisma.newsCheck.create({
+                data: {
+                    news_text: text,
+                    prediction,
+                    confidence,
+                    api_verification: apiVerification,
+                    ai_summary: aiSummary,
+                    credibility_score,
+                    claim_category,
+                    user_id
+                }
             });
             if (newCheck && newCheck.id) recordId = newCheck.id;
         } catch (dbInsertErr) {
-            console.warn('[DB WARNING] Failed to persist news check to MySQL database:', dbInsertErr.message);
+            console.warn('[DB WARNING] Failed to persist news check to Supabase database:', dbInsertErr.message);
         }
 
         // 4. Return the comprehensive result to the frontend
@@ -760,16 +769,20 @@ Respond ONLY with a valid JSON object in strict JSON format:
  */
 app.get('/api/history', authenticateToken, async (req, res) => {
     try {
-        const rows = await NewsCheck.findAll({
+        const rows = await prisma.newsCheck.findMany({
             where: { user_id: req.user.id },
-            order: [['created_at', 'DESC']],
-            limit: 50
+            orderBy: { created_at: 'desc' },
+            take: 50
         });
         
-        const total_claims = await NewsCheck.count({ where: { user_id: req.user.id } });
-        const fake_news = await NewsCheck.count({ where: { user_id: req.user.id, prediction: 'Fake' } });
-        const real_news = await NewsCheck.count({ where: { user_id: req.user.id, prediction: 'Real' } });
-        const avgCred = await NewsCheck.aggregate('credibility_score', 'AVG', { where: { user_id: req.user.id } });
+        const total_claims = await prisma.newsCheck.count({ where: { user_id: req.user.id } });
+        const fake_news = await prisma.newsCheck.count({ where: { user_id: req.user.id, prediction: 'Fake' } });
+        const real_news = await prisma.newsCheck.count({ where: { user_id: req.user.id, prediction: 'Real' } });
+        const avgResult = await prisma.newsCheck.aggregate({
+            _avg: { credibility_score: true },
+            where: { user_id: req.user.id }
+        });
+        const avgCred = avgResult._avg ? avgResult._avg.credibility_score : 0;
         
         res.status(200).json({
             status: 'success',
@@ -791,11 +804,6 @@ app.get('/api/history', authenticateToken, async (req, res) => {
     }
 });
 
-/**
- * MODULE 6 ALTERNATE: POST /api/history/guest
- * Allows guests to view the history of only the items they personally searched
- * by checking the ID array stored in their browser localStorage.
- */
 app.post('/api/history/guest', async (req, res) => {
     try {
         const { ids } = req.body;
@@ -807,16 +815,20 @@ app.post('/api/history/guest', async (req, res) => {
         const validIds = ids.filter(id => !isNaN(parseInt(id))).map(id => parseInt(id));
         if (validIds.length === 0) return res.status(200).json({ status: 'success', data: [], analytics: null });
 
-        const rows = await NewsCheck.findAll({
-            where: { id: { [Op.in]: validIds } },
-            order: [['created_at', 'DESC']],
-            limit: 10
+        const rows = await prisma.newsCheck.findMany({
+            where: { id: { in: validIds } },
+            orderBy: { created_at: 'desc' },
+            take: 10
         });
 
-        const total_claims = await NewsCheck.count({ where: { id: { [Op.in]: validIds } } });
-        const fake_news = await NewsCheck.count({ where: { id: { [Op.in]: validIds }, prediction: 'Fake' } });
-        const real_news = await NewsCheck.count({ where: { id: { [Op.in]: validIds }, prediction: 'Real' } });
-        const avgCred = await NewsCheck.aggregate('credibility_score', 'AVG', { where: { id: { [Op.in]: validIds } } });
+        const total_claims = await prisma.newsCheck.count({ where: { id: { in: validIds } } });
+        const fake_news = await prisma.newsCheck.count({ where: { id: { in: validIds }, prediction: 'Fake' } });
+        const real_news = await prisma.newsCheck.count({ where: { id: { in: validIds }, prediction: 'Real' } });
+        const avgResult = await prisma.newsCheck.aggregate({
+            _avg: { credibility_score: true },
+            where: { id: { in: validIds } }
+        });
+        const avgCred = avgResult._avg ? avgResult._avg.credibility_score : 0;
 
         res.status(200).json({
             status: 'success',
@@ -858,22 +870,28 @@ app.get('*', (req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Express server running on http://localhost:${PORT}`);
+    try {
+        await prisma.$connect();
+        console.log('[PRISMA SUCCESS] Connected to Supabase PostgreSQL database.');
+    } catch (err) {
+        console.warn('[PRISMA WARN] Could not connect to Supabase PostgreSQL:', err.message);
+    }
 });
 
-// --- MODULE 9: Automated Database Cleanup (Cron via Sequelize) ---
+// --- MODULE 9: Automated Database Cleanup (Cron via Prisma) ---
 cron.schedule('0 0 * * *', async () => {
     try {
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        const deletedCount = await NewsCheck.destroy({
+        const deleted = await prisma.newsCheck.deleteMany({
             where: {
                 user_id: null,
-                created_at: { [Op.lt]: sevenDaysAgo }
+                created_at: { lt: sevenDaysAgo }
             }
         });
-        if (deletedCount > 0) {
-            console.log(`[Cron Database Cleanup]: Deleted ${deletedCount} old guest cache rows.`);
+        if (deleted.count > 0) {
+            console.log(`[Cron Database Cleanup]: Deleted ${deleted.count} old guest cache rows.`);
         }
     } catch (error) {
         console.error('[Cron Database Cleanup Error]:', error.message);

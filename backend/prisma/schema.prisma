@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id              Int         @id @default(autoincrement())
+  google_id       String?     @unique
+  name            String
+  email           String      @unique
+  password_hash   String?
+  auth_provider   String      @default("local")
+  profile_picture String?
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+  news_checks     NewsCheck[]
+
+  @@map("users")
+}
+
+model NewsCheck {
+  id                Int      @id @default(autoincrement())
+  user_id           Int?
+  user              User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  news_text         String   @db.Text
+  prediction        String
+  confidence        Float
+  api_verification  String
+  ai_summary        String   @db.Text
+  credibility_score Int
+  claim_category    String   @default("Other")
+  created_at        DateTime @default(now())
+
+  @@map("news_checks")
+}
