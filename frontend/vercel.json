@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://backend-three-sigma-13.vercel.app/api/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://backend-three-sigma-13.vercel.app/health"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
