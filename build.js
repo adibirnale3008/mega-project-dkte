@@ -16,6 +16,20 @@ function run(cmd, cwd = process.cwd()) {
   execSync(cmd, { cwd, env: customEnv, stdio: 'inherit' });
 }
 
+function copyRecursiveSync(src, dest) {
+  const exists = fs.existsSync(src);
+  const stats = exists && fs.statSync(src);
+  const isDirectory = exists && stats.isDirectory();
+  if (isDirectory) {
+    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+    fs.readdirSync(src).forEach(childItemName => {
+      copyRecursiveSync(path.join(src, childItemName), path.join(dest, childItemName));
+    });
+  } else {
+    fs.copyFileSync(src, dest);
+  }
+}
+
 try {
   const rootDir = process.cwd();
   console.log(`[BUILD SCRIPT] Root Directory: ${rootDir}`);
@@ -30,6 +44,14 @@ try {
     run('npm run build', path.join(rootDir, 'frontend'));
     run('npm install', path.join(rootDir, 'backend'));
     run('npx prisma generate', path.join(rootDir, 'backend'));
+
+    // Copy frontend dist to root public/ and dist/ as fallbacks for Vercel Dashboard project settings
+    const frontendDist = path.join(rootDir, 'frontend', 'dist');
+    if (fs.existsSync(frontendDist)) {
+      console.log('[BUILD SCRIPT] Mirroring frontend dist to root public/ and dist/...');
+      copyRecursiveSync(frontendDist, path.join(rootDir, 'public'));
+      copyRecursiveSync(frontendDist, path.join(rootDir, 'dist'));
+    }
   } else if (fs.existsSync(path.join(rootDir, 'package.json'))) {
     console.log('[BUILD SCRIPT] Subdirectory build detected.');
     run('npm install');
