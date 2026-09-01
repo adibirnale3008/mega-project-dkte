@@ -869,16 +869,20 @@ app.get('*', (req, res, next) => {
     });
 });
 
-// Start server
-app.listen(PORT, async () => {
-    console.log(`Express server running on http://localhost:${PORT}`);
-    try {
-        await prisma.$connect();
-        console.log('[PRISMA SUCCESS] Connected to Supabase PostgreSQL database.');
-    } catch (err) {
-        console.warn('[PRISMA WARN] Could not connect to Supabase PostgreSQL:', err.message);
-    }
-});
+// Start server locally if run directly
+if (require.main === module) {
+    app.listen(PORT, async () => {
+        console.log(`Express server running on http://localhost:${PORT}`);
+        try {
+            await prisma.$connect();
+            console.log('[PRISMA SUCCESS] Connected to Supabase PostgreSQL database.');
+        } catch (err) {
+            console.warn('[PRISMA WARN] Could not connect to Supabase PostgreSQL:', err.message);
+        }
+    });
+}
+
+module.exports = app;
 
 // --- MODULE 9: Automated Database Cleanup (Cron via Prisma) ---
 cron.schedule('0 0 * * *', async () => {
