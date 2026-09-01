@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #101f22;
+    color: #f1f5f9;
+  }
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.glass-pill {
+  background: rgba(13, 204, 242, 0.05);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(13, 204, 242, 0.15);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #0dccf2 0%, #00fff2 50%, #38ef7d 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.neon-glow {
+  box-shadow: 0 0 20px rgba(13, 204, 242, 0.4);
+}
+
+.modal-body-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(13, 204, 242, 0.3) transparent;
+}
+
+.modal-body-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-body-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(13, 204, 242, 0.3);
+  border-radius: 9999px;
+}
+
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+.heartbeat {
+  animation: heartbeat 2s infinite ease-in-out;
+}

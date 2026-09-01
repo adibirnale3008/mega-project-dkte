@@ -24,6 +24,23 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `users`
+--
+
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `google_id` varchar(255) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `email` varchar(255) NOT NULL,
+  `profile_picture` varchar(500) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `google_id` (`google_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `news_checks`
 --
 
@@ -36,8 +53,11 @@ CREATE TABLE `news_checks` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `ai_summary` text DEFAULT NULL,
   `credibility_score` int(11) DEFAULT 50,
-  `claim_category` varchar(50) DEFAULT 'Other'
+  `claim_category` varchar(50) DEFAULT 'Other',
+  `user_id` int(11) DEFAULT NULL,
+  CONSTRAINT `fk_news_checks_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 
 --
 -- Dumping data for table `news_checks`

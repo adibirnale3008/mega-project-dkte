@@ -2,34 +2,37 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const Groq = require('groq-sdk');
 const { OAuth2Client } = require('google-auth-library');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 const cookieParser = require('cookie-parser');
 const cron = require('node-cron');
 
-// Import database connection to verify it works on startup
-const db = require('./config/db');
-
-// Import path module from Node.js
+// Import Sequelize ORM Models
+const { User, NewsCheck } = require('./models');
+const { Op } = require('sequelize');
 const path = require('path');
 
-// --- MODULE 8: Load API Configurations Once ---
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// API Configurations & Express App Initialization
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: ['http://localhost:5173', 'http://localhost:5000', 'http://127.0.0.1:5173', 'http://127.0.0.1:5000'],
+    credentials: true
+}));
 app.use(express.json());
 app.use(cookieParser());
 
-// Set up Static File Serving for Frontend
-// This makes Express act as a Web Server for our HTML/CSS/JS without extensions!
+// Serve Static Frontend Files (production React build or legacy fallback)
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
 app.use(express.static(path.join(__dirname, '../frontend'), {
-    extensions: ['html', 'htm'] // Automatically append .html to urls that lack it!
+    extensions: ['html', 'htm']
 }));
 
 // Basic route to test server
@@ -59,25 +62,19 @@ app.post('/api/auth/google', async (req, res) => {
         const payload = ticket.getPayload();
         const { sub: google_id, name, email, picture: profile_picture } = payload;
         
-        // --- MODULE 2: Update Users Database ---
-        let user;
-        const [existingUser] = await db.execute('SELECT * FROM users WHERE google_id = ?', [google_id]);
+        // --- MODULE 2: Update Users Database via Sequelize ---
+        let user = await User.findOne({ where: { google_id } });
 
-        if (existingUser.length > 0) {
-            // User exists, log them in & update details if they changed
-            user = existingUser[0];
+        if (user) {
+            // User exists, log them in & update details if changed
             if (user.name !== name || user.profile_picture !== profile_picture) {
-                await db.execute('UPDATE users SET name = ?, profile_picture = ? WHERE id = ?', [name, profile_picture, user.id]);
                 user.name = name;
                 user.profile_picture = profile_picture;
+                await user.save();
             }
         } else {
-            // New user, create deeply
-            const [insertResult] = await db.execute(
-                'INSERT INTO users (google_id, name, email, profile_picture) VALUES (?, ?, ?, ?)',
-                [google_id, name, email, profile_picture]
-            );
-            user = { id: insertResult.insertId, google_id, name, email, profile_picture };
+            // New user, create
+            user = await User.create({ google_id, name, email, profile_picture });
         }
 
         // --- MODULE 3: Authentication Session (JWT) ---
@@ -138,10 +135,12 @@ const authenticateOptional = (req, res, next) => {
 // Fetch current user details
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
     try {
-        const [rows] = await db.execute('SELECT id, google_id, name, email, profile_picture FROM users WHERE id = ?', [req.user.id]);
-        if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        const user = await User.findByPk(req.user.id, {
+            attributes: ['id', 'google_id', 'name', 'email', 'profile_picture', 'auth_provider']
+        });
+        if (!user) return res.status(404).json({ error: 'User not found' });
         
-        return res.json({ status: 'success', user: rows[0] });
+        return res.json({ status: 'success', user });
     } catch (error) {
         console.error('Error fetching user:', error);
         res.status(500).json({ error: 'Server error fetching user details' });
@@ -158,6 +157,186 @@ app.post('/api/auth/logout', (req, res) => {
     res.json({ status: 'success', message: 'Logged out successfully' });
 });
 
+// --- LOCAL AUTH: Registration ---
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+
+        // Input validation
+        if (!name || !email || !password) {
+            return res.status(400).json({ error: 'Name, email, and password are required.' });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ error: 'Please enter a valid email address.' });
+        }
+
+        // Check for existing user by email
+        const existingUser = await User.findOne({ where: { email } });
+        if (existingUser) {
+            return res.status(409).json({ error: 'An account with this email already exists. Please log in.' });
+        }
+
+        // Hash password and create user
+        const password_hash = await bcrypt.hash(password, 12);
+        const user = await User.create({
+            name: name.trim(),
+            email: email.toLowerCase().trim(),
+            password_hash,
+            auth_provider: 'local',
+            google_id: null
+        });
+
+        // Issue JWT cookie
+        const JWT_SECRET = process.env.JWT_SECRET || 'verifiai_super_secret_dev_key';
+        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '24h' });
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 24 * 60 * 60 * 1000,
+            sameSite: 'strict'
+        });
+
+        return res.status(201).json({
+            status: 'success',
+            message: 'Account created successfully!',
+            user: { id: user.id, name: user.name, email: user.email, profile_picture: user.profile_picture, auth_provider: user.auth_provider }
+        });
+    } catch (error) {
+        console.error('Registration error:', error);
+        return res.status(500).json({ error: 'Server error during registration.' });
+    }
+});
+
+// --- LOCAL AUTH: Login ---
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required.' });
+        }
+
+        // Find user by email
+        const user = await User.findOne({ where: { email: email.toLowerCase().trim() } });
+        if (!user || user.auth_provider !== 'local') {
+            return res.status(401).json({ error: 'Invalid email or password.' });
+        }
+        if (!user.password_hash) {
+            return res.status(401).json({ error: 'This account uses Google Sign-In. Please log in with Google.' });
+        }
+
+        // Verify password
+        const isValid = await bcrypt.compare(password, user.password_hash);
+        if (!isValid) {
+            return res.status(401).json({ error: 'Invalid email or password.' });
+        }
+
+        // Issue JWT cookie
+        const JWT_SECRET = process.env.JWT_SECRET || 'verifiai_super_secret_dev_key';
+        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '24h' });
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 24 * 60 * 60 * 1000,
+            sameSite: 'strict'
+        });
+
+        return res.status(200).json({
+            status: 'success',
+            message: 'Logged in successfully!',
+            user: { id: user.id, name: user.name, email: user.email, profile_picture: user.profile_picture, auth_provider: user.auth_provider }
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        return res.status(500).json({ error: 'Server error during login.' });
+    }
+});
+
+/**
+ * POST /api/extract-image-text
+ * Vision API endpoint for extracting text from newspaper clippings/images via Gemini or Groq Vision.
+ */
+app.post('/api/extract-image-text', async (req, res) => {
+    try {
+        const { image } = req.body;
+        if (!image) {
+            return res.status(400).json({ error: 'Image content is required.' });
+        }
+
+        let mimeType = 'image/jpeg';
+        let base64Data = image;
+        if (image.startsWith('data:')) {
+            const matches = image.match(/^data:(image\/\w+);base64,(.*)$/);
+            if (matches) {
+                mimeType = matches[1];
+                base64Data = matches[2];
+            }
+        }
+
+        let extractedText = null;
+        let sourceUsed = null;
+
+        // 1. Try Gemini Vision if GEMINI_API_KEY is available
+        const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+        if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here') {
+            try {
+                const { GoogleGenerativeAI } = require('@google/generative-ai');
+                const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+                const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+                const imagePart = {
+                    inlineData: {
+                        data: base64Data,
+                        mimeType: mimeType
+                    }
+                };
+
+                const prompt = "Extract and transcribe all printed headline and news article text verbatim from this image. Do not include intro or meta explanations. Return ONLY the extracted text.";
+                const result = await model.generateContent([prompt, imagePart]);
+                const responseText = result.response.text();
+
+                if (responseText && responseText.trim().length > 0) {
+                    extractedText = responseText.trim();
+                    sourceUsed = 'Gemini AI Vision';
+                    console.log('[VISION SUCCESS] Extracted image text via Gemini AI Vision');
+                }
+            } catch (geminiErr) {
+                console.warn('[VISION NOTICE] Gemini Vision unavailable:', geminiErr.message);
+            }
+        }
+
+        // 2. Fall back cleanly if no AI Vision key configured
+        if (!extractedText) {
+            console.log('[VISION NOTICE] AI Vision API not configured or skipped. Utilizing client Tesseract OCR.');
+        }
+
+        if (extractedText) {
+            return res.status(200).json({
+                status: 'success',
+                text: extractedText,
+                source: sourceUsed
+            });
+        }
+
+        // Fallback response if no Vision API keys configured, triggering client OCR safely
+        return res.status(200).json({
+            status: 'fallback',
+            message: 'AI Vision API not configured. Triggering Tesseract client-side OCR.'
+        });
+
+    } catch (error) {
+        console.error('Error in /api/extract-image-text:', error.message);
+        return res.status(200).json({
+            status: 'fallback',
+            message: 'Internal error in vision endpoint, falling back to client OCR.'
+        });
+    }
+});
+
 /**
  * MODULE 5: POST /api/check-news
  * Receives news text from frontend, calls Python ML, saves to DB, returns to frontend.
@@ -170,29 +349,73 @@ app.post('/api/check-news', authenticateOptional, async (req, res) => {
             return res.status(400).json({ error: 'News text is required.' });
         }
 
-        // --- MODULE 5: API Response Caching ---
-        // Instantly checks the database. Skips ALL expensive Gemini/News calls if found!
+        // --- INPUT QUALITY VALIDATION: Detect gibberish / random text ---
+        const words = text.trim().split(/\s+/);
+        const wordCount = words.length;
+
+        // Must have at least 4 words
+        if (wordCount < 4) {
+            return res.status(400).json({ 
+                error: 'Please enter a meaningful news article or claim (at least 4 words).' 
+            });
+        }
+
+        // Check for gibberish: count words that look like real English words
+        // (contain at least 2 consecutive vowels or common consonant patterns)
+        const vowels = /[aeiou]/i;
+        const realWordPattern = /^[a-zA-Z]{2,}$/;
+        let realWordCount = 0;
+        for (const word of words) {
+            const cleanWord = word.replace(/[^a-zA-Z]/g, '');
+            if (cleanWord.length >= 2 && realWordPattern.test(cleanWord) && vowels.test(cleanWord)) {
+                realWordCount++;
+            }
+        }
+
+        // If less than 40% of words look like real words, reject as gibberish
+        const realWordRatio = realWordCount / wordCount;
+        if (realWordRatio < 0.4) {
+            return res.status(400).json({ 
+                error: 'The input appears to be random or gibberish. Please enter a real news article or claim.' 
+            });
+        }
+
+        // Average word length check: real sentences have avg word length 3-12 chars
+        const totalChars = words.join('').replace(/[^a-zA-Z]/g, '').length;
+        const avgWordLen = totalChars / wordCount;
+        if (avgWordLen < 2 || avgWordLen > 20) {
+            return res.status(400).json({ 
+                error: 'The input does not appear to be a valid news article. Please enter meaningful text.' 
+            });
+        }
+
+        // --- MODULE 5: API Response Caching via Sequelize ---
         try {
-            const [cacheResult] = await db.execute('SELECT * FROM news_checks WHERE news_text = ? LIMIT 1', [text]);
-            if (cacheResult.length > 0) {
-                const cached = cacheResult[0];
-                // If a guest searched this previously (user_id is NULL) and now a logged in user is searching it,
-                // OR if a guest is searching it again, we need to ensure the most recent attempt is linked accurately.
-                // However, caching creates a unique problem where we don't insert a NEW row.
-                // To fix the guest-history rendering bug securely, we will just ALWAYS insert a new row for the user 
-                // so they get their own timestamp and ID, but we will copy the safe cached data!
-                
+            const cached = await NewsCheck.findOne({ 
+                where: { news_text: text },
+                order: [['created_at', 'DESC']]
+            });
+
+            // Serve cache ONLY if the cached row contains a valid Groq AI summary
+            const isFallbackSummary = cached && cached.ai_summary && (
+                cached.ai_summary.includes('unavailable') || 
+                cached.ai_summary.includes('not generated') || 
+                cached.ai_summary.includes('Internal Scikit-Learn')
+            );
+
+            if (cached && !isFallbackSummary) {
                 const user_id = req.user ? req.user.id : null;
                 
-                const insertQuery = `
-                    INSERT INTO news_checks (news_text, prediction, confidence, api_verification, ai_summary, credibility_score, claim_category, user_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                `;
-                
-                const [newRow] = await db.execute(insertQuery, [
-                    text, cached.prediction, cached.confidence, cached.api_verification, cached.ai_summary, 
-                    cached.credibility_score, cached.claim_category, user_id
-                ]);
+                const newRow = await NewsCheck.create({
+                    news_text: text,
+                    prediction: cached.prediction,
+                    confidence: cached.confidence,
+                    api_verification: cached.api_verification,
+                    ai_summary: cached.ai_summary,
+                    credibility_score: cached.credibility_score,
+                    claim_category: cached.claim_category,
+                    user_id
+                });
 
                 // Recalculate quick local manipulation risk
                 const clickbaitKeywords = ['shocking', 'secret cure', "they don't want you to know", 'miracle treatment', 'exposed truth', 'you won\'t believe', 'mind-blowing', 'scandal', 'hidden agenda', 'banned'];
@@ -203,7 +426,7 @@ app.post('/api/check-news', authenticateOptional, async (req, res) => {
                 return res.status(200).json({
                     status: 'success',
                     data: {
-                        id: newRow.insertId, // Pass the NEW row ID back to the frontend
+                        id: newRow.id, // Pass the NEW row ID back to the frontend
                         text: cached.news_text,
                         prediction: cached.prediction,
                         confidence: cached.confidence,
@@ -220,28 +443,24 @@ app.post('/api/check-news', authenticateOptional, async (req, res) => {
         } catch (dbErr) {
             console.warn('Cache check failed. Falling back to live APIs.', dbErr.message);
         }
-
-        const geminiApiKey = GEMINI_API_KEY;
-        let factCheckContext = "";
-
-        // --- NEW FEATURE C: Google Fact Check Tools API ---
-        if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
-            try {
-                const queryText = encodeURIComponent(text.substring(0, 50));
-                const factResponse = await axios.get(`https://factchecktools.googleapis.com/v1alpha1/claims:search?query=${queryText}&key=${geminiApiKey}`);
-                
-                const claims = factResponse.data.claims || [];
-                if (claims.length > 0) {
-                    const topClaim = claims[0];
-                    const review = topClaim.claimReview && topClaim.claimReview.length > 0 ? topClaim.claimReview[0] : null;
-                    if (review) {
-                        factCheckContext = `[OFFICIAL FACT CHECK] A professional fact-checker (${review.publisher.name}) recently reviewed a similar claim. Their official verdict is: "${review.textualRating}".\n\n`;
-                    }
-                }
-            } catch (err) {
-                console.warn('Fact Check API unavailable or not enabled for this key, skipping.');
+        
+        // --- MODULE 5: Python ML Flask Service Integration ---
+        const ML_API_URL = process.env.ML_API_URL || 'http://127.0.0.1:5001';
+        let mlPrediction = null;
+        let mlConfidence = null;
+        try {
+            const mlResponse = await axios.post(`${ML_API_URL}/predict`, { text }, { timeout: 3000 });
+            if (mlResponse.data && mlResponse.data.prediction) {
+                mlPrediction = mlResponse.data.prediction;
+                mlConfidence = mlResponse.data.confidence;
+                console.log(`[ML SERVICE SUCCESS] Model Prediction: ${mlPrediction}, Confidence: ${mlConfidence}`);
             }
+        } catch (mlErr) {
+            console.warn(`[ML SERVICE WARNING] ML service at ${ML_API_URL} skipped or unreachable:`, mlErr.message);
         }
+
+        const groqApiKey = GROQ_API_KEY;
+        let factCheckContext = "";
 
         // 1. Fetch live contextual data from NewsAPI
         let apiVerification = 'Pending';
@@ -326,77 +545,94 @@ app.post('/api/check-news', authenticateOptional, async (req, res) => {
             contextText += "No live data available (API Key missing).\n";
         }
 
-        // 2. Feed text and live context to Google Gemini
+        // 2. Feed text and live context to Groq AI
         let prediction = "Fake";
         let confidence = 0.5;
-        let aiSummary = 'AI Fact-Check not generated. Please configure GEMINI_API_KEY in .env.';
+        let aiSummary = 'AI Fact-Check not generated. Please configure GROQ_API_KEY in .env.';
         let claim_category = 'Other'; // MODULE 3 Default
 
-        if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
+        if (groqApiKey && groqApiKey !== 'your_groq_api_key_here') {
             const fallbackModels = [
-                "gemini-1.5-flash", 
-                "gemini-2.0-flash", 
-                "gemini-2.5-flash-lite", 
-                "gemini-flash-lite-latest",
-                "gemini-1.5-flash-8b"
+                "qwen/qwen3.6-27b",
+                "groq/compound-mini",
+                "openai/gpt-oss-120b"
             ];
-            
+
             let success = false;
             let lastError = null;
 
             for (const modelName of fallbackModels) {
                 try {
-                    const genAI = new GoogleGenerativeAI(geminiApiKey);
-                    const model = genAI.getGenerativeModel({ model: modelName }); 
-                    
-                    const prompt = `You are a highly intelligent fact-checking AI. 
-Today's actual date is: ${new Date().toDateString()}. Use this date to understand when "today" or "recent" is to avoid marking real events as "the future."
+                    const groq = new Groq({ apiKey: groqApiKey });
+
+                    const prompt = `You are a strict, objective, expert fact-checking AI system.
+Today's actual date is: ${new Date().toDateString()}. Use this date for temporal context.
 
 User Claim to verify: "${text.substring(0, 500)}"
 
-Here are top news headlines and simple snippets scraped from the internet right now relating to the claim:
+Scraped Internet Search Snippets (Context):
 ${contextText}
 
-Using the provided live internet data AND your own vast internal dataset, perform the following task:
-1. Determine if the claim is "Real" or "Fake". 
-CRITICAL RULE: The internet data provided are just short summaries. Do NOT mark a claim as "Fake" just because a specific number or minor detail is missing from the short summaries. If the core event or context is generally supported by the news snippets or your internal knowledge, mark it as "Real". Only mark it as "Fake" if the core claim is verifiably false, contradicts the news, or is entirely a conspiracy.
-2. Provide a confidence score between 0.0 and 1.0.
-3. Write a 2-3 sentence summary explaining WHY it is true or false. Include the "OFFICIAL FACT CHECK" in your summary if one was provided in the context.
-4. Provide a list of citations (newspaper names or fact checkers) used to evaluate this.
-5. Identify the Claim Category (Politics, Health, Science, Technology, Economy, Entertainment, World, or Other).
+EVALUATION RULES:
+1. FACT-CHECK THE SPECIFIC ASSERTION, NOT JUST THE ENTITY: Just because a real company, person, or institution exists does NOT mean claims about them are true.
+2. REQUIRE VERIFIABLE EVIDENCE: If a claim asserts a specific event, state, or outcome that is not supported by verified news sources, official reports, or established facts, classify it as "Fake".
+3. POOR GRAMMAR / VAGUE RUMORS / SLANG: Claims with severe grammatical errors, vague assertions, or unsourced rumors must be classified as "Fake" or marked with very low confidence.
+4. "Real" vs "Fake" GUIDELINES:
+   - "Real": The specific claim is accurate, documented by reputable sources, and supported by factual evidence.
+   - "Fake": The claim is false, unverified rumor, misleading, fabricated, or lacks any credible factual evidence.
 
-Respond ONLY with a valid JSON object in strict string format, with no markdown formatting or blockquotes:
+Respond ONLY with a valid JSON object in strict JSON format:
 {
-  "prediction": "Real",
-  "confidence": 0.90,
-  "summary": "Your explanation goes here.",
-  "citations": ["BBC News", "Reuters"],
-  "category": "Science"
+  "prediction": "Real" | "Fake",
+  "confidence": 0.00 to 1.00,
+  "summary": "Detailed 2-3 sentence explanation evaluating the claim's factual accuracy.",
+  "citations": ["Source Name 1", "Source Name 2"],
+  "category": "Politics" | "Health" | "Science" | "Technology" | "Economy" | "Entertainment" | "World" | "Education" | "Other"
 }`;
-                    
-                    const geminiResponse = await model.generateContent(prompt);
-                    const responseText = geminiResponse.response.text().trim();
-                    
-                    // Parse the JSON output securely with robust regex extraction
-                    let cleanedJsonText = responseText;
-                    
-                    // Sometimes Gemini ignores instructions and returns extra text around the JSON.
-                    // This regex extracts ONLY the JSON object from the response string.
-                    const jsonMatch = responseText.match(/{(?:[^{}]|(?:{[^{}]*}))*}/);
-                    if (jsonMatch) {
-                        cleanedJsonText = jsonMatch[0];
+
+                    const chatCompletion = await groq.chat.completions.create({
+                        messages: [
+                            { role: 'system', content: 'You are an objective AI fact-checking engine. Always return valid JSON matching requested keys.' },
+                            { role: 'user', content: prompt }
+                        ],
+                        model: modelName,
+                        temperature: 0.1,
+                        max_tokens: 2048
+                    });
+
+                    const responseText = chatCompletion.choices[0]?.message?.content?.trim() || '';
+
+                    // Strip <think> tags from reasoning models and clean markdown blocks
+                    let cleaned = responseText.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/```json/gi, '').replace(/```/g, '').trim();
+
+                    // Multi-step robust JSON extraction and parsing
+                    let aiResult = null;
+
+                    try {
+                        aiResult = JSON.parse(cleaned);
+                    } catch (e1) {
+                        const firstBrace = cleaned.indexOf('{');
+                        const lastBrace = cleaned.lastIndexOf('}');
+                        if (firstBrace !== -1 && lastBrace > firstBrace) {
+                            try {
+                                aiResult = JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
+                            } catch (e2) {
+                                console.warn(`[AI PARSE NOTICE] Multi-step extraction failed for model ${modelName}`);
+                            }
+                        }
                     }
 
-                    cleanedJsonText = cleanedJsonText.replace(/```json/g, '').replace(/```/g, '').trim();
-                    const aiResult = JSON.parse(cleanedJsonText);
-                    
+                    if (!aiResult) {
+                        throw new Error(`Model ${modelName} returned non-JSON response structure`);
+                    }
+
                     prediction = aiResult.prediction || "Fake";
                     confidence = aiResult.confidence || 0.5;
                     let baseSummary = aiResult.summary || "No summary provided.";
-                    
+
                     // --- MODULE 3: Claim Category Extraction ---
                     claim_category = aiResult.category || "Other";
-                    
+
                     // FEATURE B: Source Citations
                     let citationsList = aiResult.citations || [];
                     if (citationsList.length > 0) {
@@ -407,39 +643,37 @@ Respond ONLY with a valid JSON object in strict string format, with no markdown 
 
                     // If we reach this point without crashing, the model succeeded!
                     success = true;
-                    console.log(`[AI SUCCESS] Verified using model: ${modelName}`);
+                    console.log(`[AI SUCCESS] Verified using Groq model: ${modelName}`);
                     break; // Escape the fallback loop
 
-                } catch (geminiError) {
-                    lastError = geminiError;
-                    const errorMsg = geminiError.message;
-                    
-                    // Check if it's a rate limit or "not found" error
-                    if (errorMsg.includes('429 Too Many Requests') || errorMsg.includes('Quota exceeded') || errorMsg.includes('404')) {
-                        console.warn(`[AI FALLBACK] Target model ${modelName} rate limited. Switching to next model...`);
-                        continue; // Run the loop again with the next available model
-                    }
-                    
-                    // If it crashed for another reason (like parsing), stop trying other models
-                    console.error(`[AI ERROR] Logic failed on ${modelName}:`, errorMsg);
-                    break;
+                } catch (groqError) {
+                    lastError = groqError;
+                    console.warn(`[AI FALLBACK NOTICE] Groq model ${modelName} failed (${groqError.message}). Trying next active model...`);
+                    continue; // Try next model in list
                 }
             }
 
-            // If ALL models failed, trigger the robust fallback logic
+            // If ALL Groq models failed, trigger robust fallback logic using ML Flask prediction if available
             if (!success) {
-                console.error("[CRITICAL] All AI models failed verifying the claim.");
-                
-                prediction = "Fake"; // Default safe fallback
-                confidence = 0.50;
+                console.error("[CRITICAL] All Groq AI models failed verifying the claim.");
+
+                prediction = mlPrediction || "Fake";
+                confidence = mlConfidence || 0.50;
                 claim_category = "Other";
-                
-                if (lastError && (lastError.message.includes('429 Too Many Requests') || lastError.message.includes('Quota exceeded'))) {
-                    aiSummary = "The AI verification engine has exhausted all available Google Gemini fallback models and reached the system request limit. Please wait a minute before analyzing more articles.";
+
+                if (lastError && (lastError.message.includes('429') || lastError.message.includes('rate_limit'))) {
+                    aiSummary = `The AI verification engine reached the Groq API quota limit. Standard ML model prediction: ${prediction} (Confidence: ${Math.round(confidence * 100)}%).`;
+                } else if (mlPrediction) {
+                    aiSummary = `Internal Scikit-Learn ML Model analyzed the article and classified it as ${prediction} with ${Math.round(confidence * 100)}% confidence. Groq AI detailed analysis was unavailable.`;
                 } else {
                     aiSummary = "The AI verification engine encountered a processing error while verifying this claim. Based on preliminary semantic checks, please approach this article with caution.";
                 }
             }
+        } else if (mlPrediction) {
+            // Groq API Key missing in .env, rely on Python ML Service
+            prediction = mlPrediction;
+            confidence = mlConfidence;
+            aiSummary = `Python Scikit-Learn Model Prediction: ${prediction} (${Math.round(confidence * 100)}% confidence). GROQ_API_KEY is not configured for full AI reasoning summaries.`;
         }
 
         // --- MODULE 1: Credibility Score Engine ---
@@ -473,21 +707,31 @@ Respond ONLY with a valid JSON object in strict string format, with no markdown 
         // Cap score tightly between 0 - 100
         credibility_score = Math.min(100, Math.max(0, credibility_score));
 
-        // 3. Save result into MySQL Database (MODULE 5 & 6)
+        // 3. Save result into MySQL Database via Sequelize ORM
         const user_id = req.user ? req.user.id : null;
+        let recordId = Date.now();
         
-        const insertQuery = `
-            INSERT INTO news_checks (news_text, prediction, confidence, api_verification, ai_summary, credibility_score, claim_category, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-        
-        const [result] = await db.execute(insertQuery, [text, prediction, confidence, apiVerification, aiSummary, credibility_score, claim_category, user_id]);
+        try {
+            const newCheck = await NewsCheck.create({
+                news_text: text,
+                prediction,
+                confidence,
+                api_verification: apiVerification,
+                ai_summary: aiSummary,
+                credibility_score,
+                claim_category,
+                user_id
+            });
+            if (newCheck && newCheck.id) recordId = newCheck.id;
+        } catch (dbInsertErr) {
+            console.warn('[DB WARNING] Failed to persist news check to MySQL database:', dbInsertErr.message);
+        }
 
         // 4. Return the comprehensive result to the frontend
         res.status(200).json({
             status: 'success',
             data: {
-                id: result.insertId,
+                id: recordId,
                 text: text,
                 prediction: prediction,
                 confidence: confidence,
@@ -500,10 +744,13 @@ Respond ONLY with a valid JSON object in strict string format, with no markdown 
             }
         });
 
+
     } catch (error) {
-        console.error('Error during /check-news:', error.message);
+        console.error('Error during /check-news:', error.stack);
         res.status(500).json({ error: 'Internal server error while checking news.' });
     }
+
+
 });
 
 /**
@@ -513,41 +760,34 @@ Respond ONLY with a valid JSON object in strict string format, with no markdown 
  */
 app.get('/api/history', authenticateToken, async (req, res) => {
     try {
-        const query = `
-            SELECT id, news_text, prediction, confidence, api_verification, ai_summary, credibility_score, claim_category, created_at 
-            FROM news_checks 
-            WHERE user_id = ?
-            ORDER BY created_at DESC 
-            LIMIT 50
-        `;
-        const [rows] = await db.execute(query, [req.user.id]);
+        const rows = await NewsCheck.findAll({
+            where: { user_id: req.user.id },
+            order: [['created_at', 'DESC']],
+            limit: 50
+        });
         
-        // --- MODULE 6: Analytics Dashboard (User Specific) ---
-        const statsQuery = `
-            SELECT 
-                COUNT(*) as total_claims,
-                SUM(CASE WHEN prediction = 'Fake' THEN 1 ELSE 0 END) as fake_count,
-                SUM(CASE WHEN prediction = 'Real' THEN 1 ELSE 0 END) as real_count,
-                AVG(credibility_score) as avg_credibility
-            FROM news_checks
-            WHERE user_id = ?
-        `;
-        const [statsResult] = await db.execute(statsQuery, [req.user.id]);
-        const stats = statsResult[0] || { total_claims: 0, fake_count: 0, real_count: 0, avg_credibility: 0 };
+        const total_claims = await NewsCheck.count({ where: { user_id: req.user.id } });
+        const fake_news = await NewsCheck.count({ where: { user_id: req.user.id, prediction: 'Fake' } });
+        const real_news = await NewsCheck.count({ where: { user_id: req.user.id, prediction: 'Real' } });
+        const avgCred = await NewsCheck.aggregate('credibility_score', 'AVG', { where: { user_id: req.user.id } });
         
         res.status(200).json({
             status: 'success',
             data: rows,
             analytics: {
-                total_claims: stats.total_claims || 0,
-                fake_news: stats.fake_count || 0,
-                real_news: stats.real_count || 0,
-                avg_credibility: stats.avg_credibility ? Math.round(stats.avg_credibility) : 0
+                total_claims: total_claims || 0,
+                fake_news: fake_news || 0,
+                real_news: real_news || 0,
+                avg_credibility: avgCred ? Math.round(avgCred) : 0
             }
         });
     } catch (error) {
-        console.error('Error fetching history:', error.message);
-        res.status(500).json({ error: 'Failed to retrieve history records.' });
+        console.warn('DB warning fetching history:', error.message);
+        res.status(200).json({ 
+            status: 'success', 
+            data: [], 
+            analytics: { total_claims: 0, fake_news: 0, real_news: 0, avg_credibility: 0 } 
+        });
     }
 });
 
@@ -564,48 +804,37 @@ app.post('/api/history/guest', async (req, res) => {
             return res.status(200).json({ status: 'success', data: [], analytics: null });
         }
 
-        // Validate IDs are purely numbers (security)
         const validIds = ids.filter(id => !isNaN(parseInt(id))).map(id => parseInt(id));
         if (validIds.length === 0) return res.status(200).json({ status: 'success', data: [], analytics: null });
 
-        // Build safe SQL placeholders string e.g., (?,?,?)
-        const placeholders = validIds.map(() => '?').join(',');
+        const rows = await NewsCheck.findAll({
+            where: { id: { [Op.in]: validIds } },
+            order: [['created_at', 'DESC']],
+            limit: 10
+        });
 
-        const query = `
-            SELECT id, news_text, prediction, confidence, api_verification, ai_summary, credibility_score, claim_category, created_at 
-            FROM news_checks 
-            WHERE id IN (${placeholders})
-            ORDER BY created_at DESC 
-            LIMIT 10
-        `;
-        const [rows] = await db.execute(query, validIds);
-        
-        // --- Analytics Dashboard (Guest Specific) ---
-        const statsQuery = `
-            SELECT 
-                COUNT(*) as total_claims,
-                SUM(CASE WHEN prediction = 'Fake' THEN 1 ELSE 0 END) as fake_count,
-                SUM(CASE WHEN prediction = 'Real' THEN 1 ELSE 0 END) as real_count,
-                AVG(credibility_score) as avg_credibility
-            FROM news_checks
-            WHERE id IN (${placeholders})
-        `;
-        const [statsResult] = await db.execute(statsQuery, validIds);
-        const stats = statsResult[0] || { total_claims: 0, fake_count: 0, real_count: 0, avg_credibility: 0 };
-        
+        const total_claims = await NewsCheck.count({ where: { id: { [Op.in]: validIds } } });
+        const fake_news = await NewsCheck.count({ where: { id: { [Op.in]: validIds }, prediction: 'Fake' } });
+        const real_news = await NewsCheck.count({ where: { id: { [Op.in]: validIds }, prediction: 'Real' } });
+        const avgCred = await NewsCheck.aggregate('credibility_score', 'AVG', { where: { id: { [Op.in]: validIds } } });
+
         res.status(200).json({
             status: 'success',
             data: rows,
             analytics: {
-                total_claims: stats.total_claims || 0,
-                fake_news: stats.fake_count || 0,
-                real_news: stats.real_count || 0,
-                avg_credibility: stats.avg_credibility ? Math.round(stats.avg_credibility) : 0
+                total_claims: total_claims || 0,
+                fake_news: fake_news || 0,
+                real_news: real_news || 0,
+                avg_credibility: avgCred ? Math.round(avgCred) : 0
             }
         });
     } catch (error) {
-        console.error('Error fetching guest history:', error.message);
-        res.status(500).json({ error: 'Failed to retrieve guest history records.' });
+        console.warn('DB warning fetching guest history:', error.message);
+        res.status(200).json({ 
+            status: 'success', 
+            data: [], 
+            analytics: { total_claims: 0, fake_news: 0, real_news: 0, avg_credibility: 0 } 
+        });
     }
 });
 
@@ -615,23 +844,36 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Critical server error occurred.' });
 });
 
+// SPA Fallback Route for React Single Page Application
+app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/health')) return next();
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'), (err) => {
+        if (err) {
+            // Fallback to legacy index.html if dist does not exist yet
+            res.sendFile(path.join(__dirname, '../frontend/index.html'), (legacyErr) => {
+                if (legacyErr) res.status(404).send('Not Found');
+            });
+        }
+    });
+});
+
 // Start server
 app.listen(PORT, () => {
     console.log(`Express server running on http://localhost:${PORT}`);
 });
 
-// --- MODULE 9: Automated Database Cleanup (Cron) ---
-// Runs automatically every night at midnight (0 0 * * *)
-// Deletes anonymously searched "Guest Checks" from the database that are older than 7 days, 
-// ensuring the Database Cache remains clean and doesn't bloat endlessly.
+// --- MODULE 9: Automated Database Cleanup (Cron via Sequelize) ---
 cron.schedule('0 0 * * *', async () => {
     try {
-        const [result] = await db.execute(`
-            DELETE FROM news_checks 
-            WHERE user_id IS NULL AND created_at < NOW() - INTERVAL 7 DAY
-        `);
-        if (result.affectedRows > 0) {
-            console.log(`[Cron Database Cleanup]: Deleted ${result.affectedRows} old guest cache rows.`);
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const deletedCount = await NewsCheck.destroy({
+            where: {
+                user_id: null,
+                created_at: { [Op.lt]: sevenDaysAgo }
+            }
+        });
+        if (deletedCount > 0) {
+            console.log(`[Cron Database Cleanup]: Deleted ${deletedCount} old guest cache rows.`);
         }
     } catch (error) {
         console.error('[Cron Database Cleanup Error]:', error.message);

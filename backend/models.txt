@@ -1,0 +1,14 @@
+# VerifiAI - Supported AI Models & Providers
+
+## 1. Groq AI Models (Primary Fast Inference Provider)
+- llama-3.1-8b-instant (Default fast reasoning model)
+- llama-3.3-70b-versatile (High accuracy multi-step reasoning fallback)
+- mixtral-8x7b-32768 (MoE context architecture fallback)
+
+## 2. Google Gemini Models (Optional AI Provider)
+- gemini-1.5-flash (Fast lightweight summary generator)
+- gemini-1.5-pro (Deep factual analysis)
+
+## 3. Python Local Machine Learning Service
+- Logistic Regression Classifier with TF-IDF Vectorization
+- Models stored in `ml_service/models/model.pkl` and `ml_service/models/vectorizer.pkl`

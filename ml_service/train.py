@@ -12,17 +12,19 @@ import joblib
 # Ensure NLTK resources are downloaded
 try:
     nltk.download('punkt', quiet=True)
+    nltk.download('punkt_tab', quiet=True)
     nltk.download('stopwords', quiet=True)
 except Exception as e:
     print(f"Warning: Could not download NLTK data right now: {e}")
+
 
 class FakeNewsModelBuilder:
     def __init__(self, dataset_path, model_save_path, vectorizer_save_path):
         self.dataset_path = dataset_path
         self.model_save_path = model_save_path
         self.vectorizer_save_path = vectorizer_save_path
-        self.vectorizer = TfidfVectorizer(max_features=5000)
-        self.model = LogisticRegression()
+        self.vectorizer = TfidfVectorizer(max_features=10000, ngram_range=(1, 2), sublinear_tf=True)
+        self.model = LogisticRegression(C=1.0, max_iter=1000, random_state=42)
         
     def load_data(self):
         """Load dataset from CSV. Expecting columns: 'text', 'label'"""
@@ -63,17 +65,14 @@ class FakeNewsModelBuilder:
             return
             
         # Preprocess
-        print("Preprocessing text data (this may take a while depending on dataset size)...")
-        # Ensure labels are binary: 'Fake' or 'Real' -> 0 or 1
-        # For simplicity, let's keep the strings if they are exactly 'Fake' or 'Real'
-        # Or you can map them: df['label'] = df['label'].map({'Real': 1, 'Fake': 0})
+        print("Preprocessing text data...")
         
         X = df['text'].apply(self.preprocess_text)
         y = df['label']
         
         # Split Data
         print("Splitting data into training and testing sets...")
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         
         # Feature Extraction (TF-IDF)
         print("Extracting features (TF-IDF Vectorization)...")
@@ -104,7 +103,9 @@ class FakeNewsModelBuilder:
 if __name__ == "__main__":
     # Determine base dir dynamically
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    DATASET_PATH = os.path.join(BASE_DIR, 'dataset', 'sample_news.csv')
+    DATASET_PATH = os.path.join(BASE_DIR, 'dataset', 'fake_news_dataset.csv')
+    if not os.path.exists(DATASET_PATH):
+        DATASET_PATH = os.path.join(BASE_DIR, 'dataset', 'sample_news.csv')
     
     # We save models into a 'models' folder
     MODELS_DIR = os.path.join(BASE_DIR, 'models')
@@ -113,3 +114,4 @@ if __name__ == "__main__":
     
     builder = FakeNewsModelBuilder(DATASET_PATH, MODEL_PATH, VECTORIZER_PATH)
     builder.train_and_save()
+
