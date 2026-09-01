@@ -202,7 +202,15 @@ export default function Detector({ user, onRequestGuestModal }) {
         credentials: 'include'
       });
 
-      const data = await res.json();
+      const resText = await res.text();
+      let data = {};
+      try {
+        data = JSON.parse(resText);
+      } catch (parseErr) {
+        console.error('Non-JSON server response:', resText);
+        throw new Error('Server returned an unexpected error. Please check backend connection.');
+      }
+
       if (!res.ok) {
         throw new Error(data.error || 'Server error occurred during analysis');
       }

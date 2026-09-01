@@ -42,7 +42,9 @@ export default function History({ user, onSelectItem }) {
         });
       }
 
-      const data = await res.json();
+      const resText = await res.text();
+      let data = {};
+      try { data = JSON.parse(resText); } catch (pErr) { data = { data: [], analytics: null }; }
       if (!res.ok) throw new Error(data.error || 'Failed to retrieve history');
 
       setHistoryData(data.data || []);

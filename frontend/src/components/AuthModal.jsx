@@ -176,7 +176,9 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'lo
         body: JSON.stringify({ email: loginEmail, password: loginPassword }),
         credentials: 'include',
       });
-      const data = await res.json();
+      const resText = await res.text();
+      let data = {};
+      try { data = JSON.parse(resText); } catch (pErr) { data = { error: 'Server connection error.' }; }
       if (res.ok && data.user) {
         setSuccessMsg('Welcome back! Logging you in...');
         setTimeout(() => { onSuccess(data.user); onClose(); }, 800);
@@ -216,7 +218,9 @@ export default function AuthModal({ isOpen, onClose, onSuccess, defaultTab = 'lo
         body: JSON.stringify({ name: regName, email: regEmail, password: regPassword }),
         credentials: 'include',
       });
-      const data = await res.json();
+      const resText = await res.text();
+      let data = {};
+      try { data = JSON.parse(resText); } catch (pErr) { data = { error: 'Server connection error.' }; }
       if (res.ok && data.user) {
         setSuccessMsg('Account created! Welcome to VerifiAI 🎉');
         setTimeout(() => { onSuccess(data.user); onClose(); }, 900);
