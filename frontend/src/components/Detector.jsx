@@ -77,7 +77,7 @@ export default function Detector({ user, onRequestGuestModal }) {
 
     let backendVisionSuccess = false;
 
-    // 1. Try Backend AI Vision Extraction First (Gemini / Groq Vision)
+    // 1. Try Backend AI Vision Extraction First
     try {
       const res = await fetch('/api/extract-image-text', {
         method: 'POST',
@@ -179,6 +179,15 @@ export default function Detector({ user, onRequestGuestModal }) {
     const cleanText = text.trim();
     if (!cleanText) return;
 
+    // Guest search limit check
+    if (!user) {
+      const guestHistory = JSON.parse(localStorage.getItem('guest_history_ids')) || [];
+      if (guestHistory.length >= 3) {
+        onRequestGuestModal();
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
 
@@ -203,7 +212,6 @@ export default function Detector({ user, onRequestGuestModal }) {
         image_preview: activeMode === 'image' ? imagePreview : null
       });
 
-      // Save ID to local storage for guest history tracking
       if (!user && data.data?.id) {
         const guestHistory = JSON.parse(localStorage.getItem('guest_history_ids')) || [];
         if (!guestHistory.includes(data.data.id)) {
@@ -225,7 +233,6 @@ export default function Detector({ user, onRequestGuestModal }) {
     handleRemoveImage();
   };
 
-  // Helper to render dynamically highlighted snippet keywords
   const renderHighlightedSnippet = (description) => {
     if (!description) return null;
     const userWords = text.replace(/[^\w\s]/gi, '').split(/\s+/).filter(w => w.length > 3);
@@ -240,7 +247,7 @@ export default function Detector({ user, onRequestGuestModal }) {
     return parts.map((part, idx) => {
       if (userWords.some(w => w.toLowerCase() === part.toLowerCase())) {
         return (
-          <mark key={idx} className="bg-yellow-500/80 text-background-dark font-bold px-1 rounded-sm mx-0.5">
+          <mark key={idx} className="bg-amber-200 text-amber-900 font-bold px-1 rounded mx-0.5">
             <u>{part}</u>
           </mark>
         );
@@ -251,48 +258,48 @@ export default function Detector({ user, onRequestGuestModal }) {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
-      {/* Hero Section */}
-      <section className="text-center space-y-3 py-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-wider mb-2">
-          <Sparkles className="w-3.5 h-3.5" />
-          AI & Multimodal NLP Misinformation Detector
+      {/* Header Banner */}
+      <section className="text-center space-y-3 py-4">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-violet-100 border border-violet-200 text-violet-800 text-xs font-bold uppercase tracking-wider mb-1">
+          <Sparkles className="w-3.5 h-3.5 text-violet-600" />
+          AI &amp; Multimodal Misinformation Classifier
         </div>
-        <h2 className="text-4xl md:text-6xl font-black tracking-tight text-gradient">
-          Uncover the Truth
+        <h2 className="text-3xl md:text-5xl font-black tracking-tight text-slate-900">
+          Analyze &amp; Verify <span className="text-gradient">Claim Authenticity</span>
         </h2>
-        <p className="text-slate-400 text-base md:text-lg max-w-xl mx-auto">
-          Paste article text or upload a <strong>newspaper image clipping</strong> to instantly verify authenticity with real-time news sources and AI verification.
+        <p className="text-slate-600 text-sm md:text-base max-w-xl mx-auto">
+          Paste news article text or upload a <strong>newspaper clipping photo</strong> to verify credibility against machine learning models and AI LLM reasoning.
         </p>
       </section>
 
       {/* Input Form Module */}
       {!result && (
-        <section className="glass-card rounded-2xl p-6 md:p-8 space-y-6">
+        <section className="glass-card rounded-3xl p-6 md:p-8 space-y-6 bg-white/90 border border-violet-100 shadow-card-soft">
           
           {/* Mode Switcher Tabs */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-glass-border pb-4 gap-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-violet-100 pb-4 gap-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10 text-primary border border-primary/20">
+              <div className="p-2.5 rounded-xl bg-violet-100 text-violet-700 border border-violet-200">
                 <BookOpen className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white">Article Analysis Engine</h3>
-                <p className="text-xs text-slate-400">Choose your input mode below</p>
+                <h3 className="text-lg font-bold text-slate-900">Article Analysis Engine</h3>
+                <p className="text-xs text-slate-500">Choose your input mode below</p>
               </div>
             </div>
 
-            <div className="flex bg-background-dark/80 p-1 rounded-xl border border-glass-border">
+            <div className="flex bg-violet-50 p-1 rounded-xl border border-violet-100">
               <button
                 type="button"
                 onClick={() => { setActiveMode('text'); setError(null); }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
                   activeMode === 'text'
-                    ? 'bg-primary text-background-dark shadow-[0_0_15px_rgba(13,204,242,0.3)]'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-violet-600 text-white shadow-md shadow-violet-600/30'
+                    : 'text-slate-600 hover:text-violet-700'
                 }`}
               >
                 <FileText className="w-4 h-4" />
-                Text Input
+                Text Input Mode
               </button>
 
               <button
@@ -300,12 +307,12 @@ export default function Detector({ user, onRequestGuestModal }) {
                 onClick={() => { setActiveMode('image'); setError(null); }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
                   activeMode === 'image'
-                    ? 'bg-primary text-background-dark shadow-[0_0_15px_rgba(13,204,242,0.3)]'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-violet-600 text-white shadow-md shadow-violet-600/30'
+                    : 'text-slate-600 hover:text-violet-700'
                 }`}
               >
                 <FileImage className="w-4 h-4" />
-                Newspaper Image Upload
+                Newspaper OCR Upload
               </button>
             </div>
           </div>
@@ -321,8 +328,8 @@ export default function Detector({ user, onRequestGuestModal }) {
                   onClick={() => fileInputRef.current?.click()}
                   className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-4 ${
                     isDragOver 
-                      ? 'border-primary bg-primary/10 scale-[1.01]' 
-                      : 'border-glass-border hover:border-primary/50 bg-background-dark/40 hover:bg-background-dark/60'
+                      ? 'border-violet-600 bg-violet-50/80 scale-[1.01]' 
+                      : 'border-violet-200 hover:border-violet-400 bg-violet-50/30 hover:bg-violet-50/60'
                   }`}
                 >
                   <input
@@ -333,46 +340,44 @@ export default function Detector({ user, onRequestGuestModal }) {
                     onChange={(e) => e.target.files && handleImageFile(e.target.files[0])}
                   />
 
-                  <div className="p-4 rounded-full bg-primary/10 text-primary border border-primary/20">
+                  <div className="p-4 rounded-full bg-violet-100 text-violet-700 border border-violet-200">
                     <Upload className="w-8 h-8 animate-bounce-slow" />
                   </div>
 
                   <div className="space-y-1">
-                    <p className="text-white font-bold text-base">
-                      Drag & Drop Newspaper Image or Clipping
+                    <p className="text-slate-900 font-bold text-base">
+                      Drag &amp; Drop Newspaper Image or Clipping Photo
                     </p>
-                    <p className="text-slate-400 text-xs">
-                      Supports PNG, JPG, JPEG, WEBP photos up to 10MB
+                    <p className="text-slate-500 text-xs">
+                      Supports PNG, JPG, JPEG, WEBP files up to 10MB
                     </p>
                   </div>
 
-                  <span className="px-4 py-2 rounded-xl bg-primary/20 border border-primary/30 text-primary font-semibold text-xs uppercase tracking-wider">
+                  <span className="px-4 py-2 rounded-xl bg-violet-600 text-white font-bold text-xs uppercase tracking-wider shadow-sm">
                     Browse File
                   </span>
                 </div>
               ) : (
-                <div className="glass-card rounded-xl p-4 border border-glass-border flex flex-col md:flex-row items-center gap-4 relative">
-                  {/* Image Thumbnail */}
+                <div className="glass-card rounded-2xl p-4 border border-violet-200 flex flex-col md:flex-row items-center gap-4 relative bg-violet-50/40">
                   <div className="relative group shrink-0">
                     <img 
                       src={imagePreview} 
                       alt="Newspaper Clipping" 
-                      className="w-32 h-32 object-cover rounded-xl border border-glass-border shadow-md"
+                      className="w-32 h-32 object-cover rounded-xl border border-violet-200 shadow-sm"
                     />
-                    <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="absolute inset-0 bg-violet-900/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <ScanText className="w-6 h-6 text-white" />
                     </div>
                   </div>
 
-                  {/* Details & Status */}
                   <div className="flex-1 space-y-2 text-center md:text-left w-full">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="bg-primary/20 text-primary text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-primary/30 uppercase">
+                        <span className="bg-violet-100 text-violet-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-violet-200 uppercase">
                           📰 Newspaper Image
                         </span>
                         {ocrEngineUsed && (
-                          <span className="bg-emerald-500/20 text-emerald-400 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                          <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
                             ✓ {ocrEngineUsed}
                           </span>
                         )}
@@ -381,37 +386,36 @@ export default function Detector({ user, onRequestGuestModal }) {
                       <button
                         type="button"
                         onClick={handleRemoveImage}
-                        className="text-slate-400 hover:text-red-400 p-1 transition-colors"
+                        className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
                         title="Remove Image"
                       >
                         <X className="w-5 h-5" />
                       </button>
                     </div>
 
-                    <p className="text-slate-200 text-xs font-semibold truncate">
+                    <p className="text-slate-800 text-xs font-bold truncate">
                       File: {selectedImage?.name || 'newspaper_article.jpg'} ({(selectedImage?.size / 1024).toFixed(1)} KB)
                     </p>
 
-                    {/* OCR Progress Bar */}
                     {ocrLoading ? (
                       <div className="space-y-1.5 pt-1">
-                        <div className="flex justify-between text-[11px] text-slate-300 font-medium">
+                        <div className="flex justify-between text-[11px] text-slate-700 font-semibold">
                           <span className="flex items-center gap-1.5">
-                            <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                            <Loader2 className="w-3.5 h-3.5 text-violet-600 animate-spin" />
                             {ocrStatusText}
                           </span>
                           <span>{ocrProgress}%</span>
                         </div>
-                        <div className="w-full bg-background-dark h-2 rounded-full overflow-hidden border border-glass-border">
+                        <div className="w-full bg-violet-100 h-2 rounded-full overflow-hidden">
                           <div 
-                            className="bg-primary h-full transition-all duration-300 shadow-[0_0_10px_rgba(13,204,242,0.8)]"
+                            className="bg-violet-600 h-full transition-all duration-300 shadow-sm"
                             style={{ width: `${ocrProgress}%` }}
                           />
                         </div>
                       </div>
                     ) : (
-                      <p className="text-[11px] text-slate-400">
-                        Text extracted below. You can edit or refine the text if needed before running analysis.
+                      <p className="text-[11px] text-slate-500">
+                        Extracted text below. You can edit or refine the text if needed before running analysis.
                       </p>
                     )}
                   </div>
@@ -424,12 +428,12 @@ export default function Detector({ user, onRequestGuestModal }) {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-slate-300 text-sm font-medium flex items-center gap-2">
+                <label className="text-slate-800 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
                   <span>
                     {activeMode === 'image' ? 'Extracted Newspaper Headline & Article Text' : 'News Headline or Full Content'}
                   </span>
                   {activeMode === 'image' && text && (
-                    <span className="text-[11px] text-primary flex items-center gap-1">
+                    <span className="text-[11px] text-violet-700 font-semibold flex items-center gap-1">
                       <Edit3 className="w-3 h-3" /> Editable
                     </span>
                   )}
@@ -447,12 +451,12 @@ export default function Detector({ user, onRequestGuestModal }) {
                     ? 'Extracted text from your newspaper clipping will automatically appear here...'
                     : 'Paste the news text or headline here for deep fact checking...'
                 }
-                className="w-full rounded-xl bg-background-dark/60 border border-glass-border focus:border-primary focus:ring-1 focus:ring-primary text-slate-100 placeholder:text-slate-500 p-4 transition-all text-sm leading-relaxed outline-none"
+                className="w-full rounded-2xl bg-violet-50/40 border border-violet-200 focus:border-violet-600 focus:ring-2 focus:ring-violet-200 text-slate-900 placeholder:text-slate-400 p-4 transition-all text-sm leading-relaxed outline-none"
               />
             </div>
 
             {error && (
-              <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm flex items-center gap-2">
+              <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-center gap-2.5 font-medium">
                 <AlertTriangle className="w-5 h-5 shrink-0" />
                 <span>{error}</span>
               </div>
@@ -462,16 +466,16 @@ export default function Detector({ user, onRequestGuestModal }) {
               <button
                 type="submit"
                 disabled={ocrLoading || !text.trim()}
-                className="w-full flex items-center justify-center gap-2 bg-primary text-background-dark font-bold text-lg h-14 rounded-xl hover:brightness-110 shadow-[0_0_25px_rgba(13,204,242,0.35)] transition-all uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full btn-violet font-extrabold text-base h-14 rounded-2xl shadow-violet-glow transition-all uppercase tracking-wider flex items-center justify-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Wand2 className="w-5 h-5" />
-                {activeMode === 'image' ? 'Analyze Newspaper News with AI' : 'Analyze with AI'}
+                <span>{activeMode === 'image' ? 'Analyze Newspaper News with AI' : 'Analyze Claim with AI'}</span>
               </button>
             ) : (
-              <div className="flex flex-col items-center justify-center p-6 space-y-3 bg-background-dark/40 rounded-xl border border-glass-border">
-                <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                <p className="text-slate-300 text-sm font-medium animate-pulse">
-                  Verifying newspaper claim against live news feeds & AI models...
+              <div className="flex flex-col items-center justify-center p-8 space-y-3 bg-violet-50/60 rounded-2xl border border-violet-200">
+                <Loader2 className="w-10 h-10 text-violet-600 animate-spin" />
+                <p className="text-slate-800 text-sm font-bold animate-pulse">
+                  Verifying claim against live news feeds &amp; AI models...
                 </p>
               </div>
             )}
@@ -482,19 +486,19 @@ export default function Detector({ user, onRequestGuestModal }) {
       {/* Results Module */}
       {result && (
         <section className="space-y-6">
-          <div className="flex items-center justify-between px-2">
-            <div className="flex items-center gap-3">
-              <h3 className="text-2xl font-bold text-white">Verification Dashboard</h3>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-2 gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <h3 className="text-2xl font-black text-slate-900">Verification Dashboard</h3>
               
               {result.source_type === 'newspaper_image' && (
-                <span className="flex items-center gap-1 bg-cyan-500/20 text-cyan-400 text-xs font-bold px-2.5 py-1 rounded-full border border-cyan-500/30">
+                <span className="flex items-center gap-1 bg-purple-100 text-purple-800 text-xs font-bold px-3 py-1 rounded-full border border-purple-200">
                   <ImageIcon className="w-3.5 h-3.5" />
                   Newspaper Upload
                 </span>
               )}
 
               {result.is_cached && (
-                <span className="flex items-center gap-1 bg-amber-500/20 text-amber-400 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-500/30">
+                <span className="flex items-center gap-1 bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1 rounded-full border border-amber-200">
                   <Zap className="w-3.5 h-3.5" />
                   Lightning Cache
                 </span>
@@ -503,26 +507,26 @@ export default function Detector({ user, onRequestGuestModal }) {
 
             <button
               onClick={handleReset}
-              className="flex items-center gap-2 text-sm font-semibold text-slate-400 hover:text-white transition-colors"
+              className="btn-violet-outline px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm"
             >
               <RefreshCw className="w-4 h-4" />
               Analyze Another Article
             </button>
           </div>
 
-          {/* If Newspaper Image was uploaded, show side-by-side snippet */}
+          {/* If Newspaper Image was uploaded */}
           {result.image_preview && (
-            <div className="glass-card rounded-2xl p-4 border border-cyan-500/30 bg-cyan-500/5 flex items-center gap-4">
+            <div className="glass-card rounded-2xl p-4 border border-violet-200 bg-violet-50/50 flex items-center gap-4">
               <img 
                 src={result.image_preview} 
                 alt="Uploaded Newspaper Clipping" 
-                className="w-20 h-20 object-cover rounded-xl border border-glass-border shadow-md shrink-0"
+                className="w-20 h-20 object-cover rounded-xl border border-violet-200 shadow-sm shrink-0"
               />
               <div className="space-y-1 text-xs">
-                <span className="font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1">
+                <span className="font-extrabold text-violet-800 uppercase tracking-wider flex items-center gap-1">
                   <ScanText className="w-3.5 h-3.5" /> Newspaper OCR Source Verified
                 </span>
-                <p className="text-slate-300 line-clamp-2 italic">
+                <p className="text-slate-700 line-clamp-2 italic">
                   "{result.text}"
                 </p>
               </div>
@@ -530,60 +534,60 @@ export default function Detector({ user, onRequestGuestModal }) {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Column 1: Primary Verdict & Glow */}
-            <div className="glass-card rounded-2xl p-6 flex flex-col items-center justify-center text-center gap-6 relative overflow-hidden">
+            {/* Column 1: Primary Verdict */}
+            <div className="glass-card rounded-3xl p-6 flex flex-col items-center justify-center text-center gap-6 relative overflow-hidden bg-white/95 border border-violet-100 shadow-card-soft">
               <div className="relative flex items-center justify-center">
                 <div
                   className={`absolute w-36 h-36 rounded-full blur-3xl ${
-                    result.prediction === 'Fake' ? 'bg-red-500/30' : 'bg-emerald-500/30'
+                    result.prediction === 'Fake' ? 'bg-rose-200/60' : 'bg-emerald-200/60'
                   }`}
                 />
                 {result.prediction === 'Fake' ? (
-                  <AlertTriangle className="w-24 h-24 text-red-500 relative z-10 animate-pulse-slow" />
+                  <AlertTriangle className="w-24 h-24 text-rose-600 relative z-10 animate-pulse-slow" />
                 ) : (
-                  <CheckCircle2 className="w-24 h-24 text-emerald-500 relative z-10 animate-pulse-slow" />
+                  <CheckCircle2 className="w-24 h-24 text-emerald-600 relative z-10 animate-pulse-slow" />
                 )}
               </div>
 
               <div className="space-y-1 z-10">
                 <h4 className={`text-4xl font-black ${
-                  result.prediction === 'Fake' ? 'text-red-500' : 'text-emerald-400'
+                  result.prediction === 'Fake' ? 'text-rose-600' : 'text-emerald-700'
                 }`}>
                   {result.prediction === 'Fake' ? 'LIKELY FAKE' : 'LIKELY REAL'}
                 </h4>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
+                <p className="text-xs text-slate-500 font-extrabold uppercase tracking-widest">
                   AI Verdict
                 </p>
               </div>
 
-              <div className="flex w-full divide-x divide-glass-border pt-4 border-t border-glass-border z-10">
+              <div className="flex w-full divide-x divide-violet-100 pt-4 border-t border-violet-100 z-10">
                 <div className="flex-1 text-center">
-                  <p className="text-2xl font-black text-white">{result.credibility_score}/100</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">Credibility</p>
+                  <p className="text-2xl font-black text-slate-900">{result.credibility_score}/100</p>
+                  <p className="text-[10px] text-slate-500 font-extrabold uppercase">Credibility</p>
                 </div>
                 <div className="flex-1 text-center">
-                  <p className="text-2xl font-black text-white">{(result.confidence * 100).toFixed(1)}%</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase">AI Confidence</p>
+                  <p className="text-2xl font-black text-slate-900">{(result.confidence * 100).toFixed(1)}%</p>
+                  <p className="text-[10px] text-slate-500 font-extrabold uppercase">AI Confidence</p>
                 </div>
               </div>
             </div>
 
-            {/* Column 2: Context & Manipulation Risk */}
-            <div className="glass-card rounded-2xl p-6 flex flex-col justify-between gap-6">
+            {/* Column 2: Context & Metadata */}
+            <div className="glass-card rounded-3xl p-6 flex flex-col justify-between gap-6 bg-white/95 border border-violet-100 shadow-card-soft">
               <div className="space-y-3">
-                <p className="text-xs text-slate-400 uppercase font-bold tracking-wider">
-                  Classification & Metadata
+                <p className="text-xs text-slate-500 uppercase font-extrabold tracking-wider">
+                  Classification &amp; Risk
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <span className="bg-blue-500/20 text-blue-400 text-xs font-bold px-3 py-1 rounded-full border border-blue-500/30 uppercase tracking-wider">
+                  <span className="bg-violet-100 text-violet-800 text-xs font-extrabold px-3 py-1 rounded-full border border-violet-200 uppercase tracking-wider">
                     {result.category || 'Other'}
                   </span>
-                  <span className={`text-xs font-bold px-3 py-1 rounded-full border uppercase tracking-wider ${
+                  <span className={`text-xs font-extrabold px-3 py-1 rounded-full border uppercase tracking-wider ${
                     result.credibility_score > 75
-                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                       : result.credibility_score > 45
-                      ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                      : 'bg-red-500/20 text-red-400 border-red-500/30'
+                      ? 'bg-amber-100 text-amber-800 border-amber-200'
+                      : 'bg-rose-100 text-rose-800 border-rose-200'
                   }`}>
                     Verification Risk: {result.credibility_score > 75 ? 'Low' : result.credibility_score > 45 ? 'Moderate' : 'High'}
                   </span>
@@ -591,48 +595,48 @@ export default function Detector({ user, onRequestGuestModal }) {
               </div>
 
               {/* Manipulation Risk Box */}
-              <div className={`p-4 rounded-xl border flex items-center gap-3.5 ${
+              <div className={`p-4 rounded-2xl border flex items-center gap-3.5 ${
                 result.manipulation_risk === 'HIGH'
-                  ? 'bg-red-500/10 border-red-500/30 text-red-400'
-                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
               }`}>
-                <div className="p-2 rounded-lg bg-white/10 shrink-0">
+                <div className="p-2.5 rounded-xl bg-white shrink-0 shadow-sm">
                   {result.manipulation_risk === 'HIGH' ? (
-                    <ShieldAlert className="w-6 h-6 text-red-400" />
+                    <ShieldAlert className="w-6 h-6 text-rose-600" />
                   ) : (
-                    <ShieldCheck className="w-6 h-6 text-emerald-400" />
+                    <ShieldCheck className="w-6 h-6 text-emerald-600" />
                   )}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm">
+                    <span className="font-extrabold text-sm">
                       Sensationalism Risk: {result.manipulation_risk}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-300 mt-0.5">
+                  <p className="text-xs text-slate-600 mt-0.5">
                     {result.manipulation_risk === 'HIGH'
-                      ? 'Loaded words or clickbait syntax detected.'
+                      ? 'Loaded clickbait words or high emotional syntax.'
                       : 'Language appears neutral and objective.'}
                   </p>
                 </div>
               </div>
 
               {/* Live Search Verification Pill */}
-              <div className="p-3 rounded-xl bg-background-dark/40 border border-glass-border text-xs text-slate-300 flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  result.api_verification.includes('High') ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+              <div className="p-3.5 rounded-2xl bg-violet-50/70 border border-violet-100 text-xs text-slate-700 font-medium flex items-center gap-2.5">
+                <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                  result.api_verification.includes('High') ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                 }`} />
                 <span className="truncate">{result.api_verification}</span>
               </div>
             </div>
 
-            {/* Column 3: AI Reasoning & Sources */}
-            <div className="glass-card rounded-2xl p-6 flex flex-col justify-between gap-4">
+            {/* Column 3: AI Fact-Check Explanation */}
+            <div className="glass-card rounded-3xl p-6 flex flex-col justify-between gap-4 bg-white/95 border border-violet-100 shadow-card-soft">
               <div className="space-y-2">
-                <p className="text-xs text-slate-400 uppercase font-bold tracking-wider">
-                  AI Fact-Check Explanation
+                <p className="text-xs text-slate-500 uppercase font-extrabold tracking-wider">
+                  AI Reasoning Explanation
                 </p>
-                <div className="text-xs text-slate-200 bg-background-dark/50 p-4 rounded-xl border border-glass-border leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap">
+                <div className="text-xs text-slate-700 bg-violet-50/50 p-4 rounded-2xl border border-violet-100 leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap font-medium">
                   {result.ai_summary || "No explanation provided."}
                 </div>
               </div>
@@ -640,12 +644,12 @@ export default function Detector({ user, onRequestGuestModal }) {
               {/* Matched Sources */}
               {result.matched_sources && result.matched_sources.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-[11px] text-slate-400 uppercase font-bold">
-                    Cited Sources Found
+                  <p className="text-[11px] text-slate-500 uppercase font-bold">
+                    Sources Cited
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {result.matched_sources.map((src, i) => (
-                      <span key={i} className="px-2.5 py-1 rounded bg-primary/10 border border-primary/20 text-primary text-xs font-bold flex items-center gap-1">
+                      <span key={i} className="px-2.5 py-1 rounded-lg bg-violet-100 border border-violet-200 text-violet-800 text-xs font-bold flex items-center gap-1">
                         <LinkIcon className="w-3 h-3" />
                         {src.name}
                       </span>
@@ -658,20 +662,20 @@ export default function Detector({ user, onRequestGuestModal }) {
 
           {/* Scraped Evidence Snippets */}
           {result.matched_sources && result.matched_sources.some(s => s.description) && (
-            <div className="glass-card rounded-2xl p-6 space-y-4">
-              <div className="flex items-center gap-2 text-primary font-bold text-sm">
-                <Quote className="w-4 h-4" />
-                Verified News Snippets & Keyword Matching
+            <div className="glass-card rounded-3xl p-6 space-y-4 bg-white/95 border border-violet-100 shadow-card-soft">
+              <div className="flex items-center gap-2 text-violet-800 font-extrabold text-sm">
+                <Quote className="w-4 h-4 text-violet-600" />
+                Verified News Snippets &amp; Keyword Matching
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {result.matched_sources.map((src, i) => src.description && (
-                  <div key={i} className="p-4 rounded-xl bg-background-dark/50 border border-glass-border space-y-2 text-xs">
-                    <div className="flex items-center justify-between text-slate-400 font-bold">
-                      <span className="text-primary">{src.name}</span>
+                  <div key={i} className="p-4 rounded-2xl bg-violet-50/40 border border-violet-100 space-y-2 text-xs">
+                    <div className="flex items-center justify-between text-slate-500 font-bold">
+                      <span className="text-violet-700">{src.name}</span>
                       <span>Score: {Math.round(src.score * 100)}%</span>
                     </div>
-                    <p className="text-slate-300 italic leading-relaxed">
+                    <p className="text-slate-700 italic leading-relaxed">
                       "{renderHighlightedSnippet(src.description)}"
                     </p>
                   </div>
@@ -684,4 +688,3 @@ export default function Detector({ user, onRequestGuestModal }) {
     </div>
   );
 }
-

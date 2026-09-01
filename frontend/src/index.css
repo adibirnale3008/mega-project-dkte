@@ -4,40 +4,93 @@
 
 @layer base {
   body {
-    background-color: #101f22;
-    color: #f1f5f9;
+    background-color: #faf8ff;
+    color: #1e1b4b;
+    font-family: 'Inter', sans-serif;
   }
 }
 
+/* Premium White & Violet Glassmorphism */
 .glass-card {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(124, 58, 237, 0.12);
+  box-shadow: 0 10px 30px -5px rgba(124, 58, 237, 0.08), 0 8px 12px -6px rgba(0, 0, 0, 0.02);
+}
+
+.glass-card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 36px -8px rgba(124, 58, 237, 0.16), 0 10px 16px -8px rgba(124, 58, 237, 0.08);
+  border-color: rgba(124, 58, 237, 0.25);
 }
 
 .glass-pill {
-  background: rgba(13, 204, 242, 0.05);
+  background: rgba(245, 243, 255, 0.9);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(13, 204, 242, 0.15);
+  border: 1px solid rgba(124, 58, 237, 0.2);
 }
 
+/* Violet & Indigo Text Gradients */
 .text-gradient {
-  background: linear-gradient(135deg, #0dccf2 0%, #00fff2 50%, #38ef7d 100%);
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 50%, #4f46e5 100%);
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
 }
 
-.neon-glow {
-  box-shadow: 0 0 20px rgba(13, 204, 242, 0.4);
+.text-gradient-subtle {
+  background: linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
 }
 
+/* Violet Glow Effects */
+.violet-glow {
+  box-shadow: 0 0 25px rgba(124, 58, 237, 0.3);
+}
+
+.violet-glow-lg {
+  box-shadow: 0 10px 35px rgba(124, 58, 237, 0.35);
+}
+
+/* Violet Primary Buttons */
+.btn-violet {
+  background: linear-gradient(135deg, #7c3aed 0%, #6366f1 100%);
+  color: #ffffff;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 14px 0 rgba(124, 58, 237, 0.35);
+}
+
+.btn-violet:hover {
+  background: linear-gradient(135deg, #6d28d9 0%, #4f46e5 100%);
+  box-shadow: 0 6px 20px 0 rgba(124, 58, 237, 0.5);
+  transform: translateY(-1px);
+}
+
+.btn-violet-outline {
+  background: #ffffff;
+  color: #7c3aed;
+  border: 1.5px solid rgba(124, 58, 237, 0.3);
+  transition: all 0.25s ease;
+}
+
+.btn-violet-outline:hover {
+  background: #f5f3ff;
+  border-color: #7c3aed;
+  color: #6d28d9;
+}
+
+/* Modal Scrollbar */
 .modal-body-scroll {
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(13, 204, 242, 0.3) transparent;
+  scrollbar-color: rgba(124, 58, 237, 0.3) transparent;
 }
 
 .modal-body-scroll::-webkit-scrollbar {
@@ -45,7 +98,7 @@
 }
 
 .modal-body-scroll::-webkit-scrollbar-thumb {
-  background-color: rgba(13, 204, 242, 0.3);
+  background-color: rgba(124, 58, 237, 0.3);
   border-radius: 9999px;
 }
 

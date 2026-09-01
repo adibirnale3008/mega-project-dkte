@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ShieldCheck, LogOut, Search, History as HistoryIcon, Sparkles, LogIn } from 'lucide-react';
+import { ShieldCheck, LogOut, Search, History as HistoryIcon, Sparkles, LogIn, Home, UserPlus } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab, user, setUser, onOpenAuthModal }) {
   useEffect(() => {
@@ -26,90 +26,99 @@ export default function Navbar({ activeTab, setActiveTab, user, setUser, onOpenA
   };
 
   return (
-    <header className="sticky top-0 z-50 glass-card border-x-0 border-t-0 border-b border-glass-border px-4 md:px-12 py-3 flex items-center justify-between">
+    <header className="sticky top-0 z-50 glass-card border-x-0 border-t-0 border-b border-violet-100/80 px-4 md:px-10 py-3.5 flex items-center justify-between bg-white/85 backdrop-blur-md shadow-sm">
       {/* Brand Logo */}
       <div
-        onClick={() => setActiveTab('detector')}
-        className="flex items-center gap-2.5 cursor-pointer group"
+        onClick={() => setActiveTab('landing')}
+        className="flex items-center gap-3 cursor-pointer group"
       >
-        <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 group-hover:border-primary/50 transition-all">
-          <ShieldCheck className="w-6 h-6 text-primary" />
+        <div className="p-2 rounded-xl bg-violet-100 border border-violet-200 group-hover:bg-violet-600 group-hover:border-violet-600 transition-all duration-300 shadow-sm">
+          <ShieldCheck className="w-6 h-6 text-violet-700 group-hover:text-white transition-colors" />
         </div>
-        <h1 className="text-white text-xl md:text-2xl font-black tracking-tight">
-          Verifi<span className="text-primary">AI</span>
+        <h1 className="text-slate-900 text-xl md:text-2xl font-black tracking-tight">
+          Verifi<span className="text-gradient">AI</span>
         </h1>
       </div>
 
       {/* Nav Tabs */}
-      <nav className="flex items-center gap-6">
+      <nav className="flex items-center gap-1.5 sm:gap-4">
         <button
-          onClick={() => setActiveTab('detector')}
-          className={`flex items-center gap-2 text-sm font-semibold transition-all px-3 py-1.5 rounded-lg ${
-            activeTab === 'detector'
-              ? 'text-primary bg-primary/10 border border-primary/20'
-              : 'text-slate-400 hover:text-white'
+          onClick={() => setActiveTab('landing')}
+          className={`flex items-center gap-2 text-xs sm:text-sm font-bold transition-all px-3 sm:px-4 py-2 rounded-xl ${
+            activeTab === 'landing'
+              ? 'text-violet-800 bg-violet-100/90 border border-violet-200 shadow-sm'
+              : 'text-slate-600 hover:text-violet-700 hover:bg-violet-50/60'
           }`}
         >
-          <Sparkles className="w-4 h-4" />
-          Detector
+          <Home className="w-4 h-4" />
+          <span>Home</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('detector')}
+          className={`flex items-center gap-2 text-xs sm:text-sm font-bold transition-all px-3 sm:px-4 py-2 rounded-xl ${
+            activeTab === 'detector'
+              ? 'text-violet-800 bg-violet-100/90 border border-violet-200 shadow-sm'
+              : 'text-slate-600 hover:text-violet-700 hover:bg-violet-50/60'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-violet-600" />
+          <span>AI Detector</span>
+        </button>
+
         <button
           onClick={() => setActiveTab('history')}
-          className={`flex items-center gap-2 text-sm font-semibold transition-all px-3 py-1.5 rounded-lg ${
+          className={`flex items-center gap-2 text-xs sm:text-sm font-bold transition-all px-3 sm:px-4 py-2 rounded-xl ${
             activeTab === 'history'
-              ? 'text-primary bg-primary/10 border border-primary/20'
-              : 'text-slate-400 hover:text-white'
+              ? 'text-violet-800 bg-violet-100/90 border border-violet-200 shadow-sm'
+              : 'text-slate-600 hover:text-violet-700 hover:bg-violet-50/60'
           }`}
         >
           <HistoryIcon className="w-4 h-4" />
-          History
+          <span>History</span>
         </button>
 
         {/* User Auth Section */}
         {user ? (
-          <div className="flex items-center gap-3 pl-4 border-l border-glass-border">
+          <div className="flex items-center gap-3 pl-3 sm:pl-4 border-l border-violet-100">
             <img
-              src={user.profile_picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0dccf2&color=101f22&bold=true&size=80`}
+              src={user.profile_picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=7c3aed&color=ffffff&bold=true&size=80`}
               alt={user.name}
-              className="w-9 h-9 rounded-full border border-primary/40 object-cover"
+              className="w-9 h-9 rounded-full border-2 border-violet-400 object-cover shadow-sm"
             />
             <div className="hidden lg:flex flex-col leading-tight">
-              <span className="text-sm font-bold text-slate-200 max-w-[120px] truncate">
+              <span className="text-xs font-bold text-slate-800 max-w-[110px] truncate">
                 {user.name}
               </span>
-              {user.auth_provider === 'local' && (
-                <span className="text-[10px] text-primary/60 font-medium uppercase tracking-wider">Email</span>
-              )}
+              <span className="text-[10px] text-violet-600 font-semibold uppercase tracking-wider">
+                {user.auth_provider === 'google' ? 'Google' : 'User'}
+              </span>
             </div>
             <button
               onClick={handleLogout}
               title="Logout"
-              className="text-xs text-red-400 hover:text-red-300 font-bold uppercase tracking-wider p-1.5 rounded hover:bg-red-500/10 transition-colors"
+              className="text-xs text-rose-600 hover:text-rose-700 font-bold p-2 rounded-xl hover:bg-rose-50 transition-colors"
             >
               <LogOut className="w-4 h-4" />
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2 pl-4 border-l border-glass-border">
+          <div className="flex items-center gap-2 pl-2 sm:pl-4 border-l border-violet-100">
             <button
               id="navbar-signin-btn"
               onClick={() => onOpenAuthModal('login')}
-              className="flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl border border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/60 transition-all duration-200"
+              className="flex items-center gap-1.5 text-xs sm:text-sm font-bold px-3.5 py-2 rounded-xl border border-violet-200 text-violet-700 bg-violet-50/60 hover:bg-violet-100 transition-all shadow-sm"
             >
               <LogIn className="w-4 h-4" />
-              Sign In
+              <span>Sign In</span>
             </button>
             <button
               id="navbar-register-btn"
               onClick={() => onOpenAuthModal('register')}
-              className="flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl text-background-dark transition-all duration-200 hover:brightness-110"
-              style={{
-                background: 'linear-gradient(135deg, #0dccf2, #38ef7d)',
-                boxShadow: '0 2px 16px rgba(13,204,242,0.25)',
-              }}
+              className="hidden sm:flex items-center gap-1.5 text-xs sm:text-sm font-bold px-4 py-2 rounded-xl btn-violet shadow-violet-sm hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
-              <Sparkles className="w-4 h-4" />
-              Register
+              <UserPlus className="w-4 h-4" />
+              <span>Register</span>
             </button>
           </div>
         )}
