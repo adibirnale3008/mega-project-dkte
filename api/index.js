@@ -1,15 +1,6 @@
-let app;
-try {
-  app = require('../backend/server.js');
-} catch (err) {
-  console.error('[ROOT API INDEX ERROR]:', err);
-  app = (req, res) => {
-    res.status(500).json({
-      status: 'error',
-      error: 'Serverless Function Load Failed',
-      message: err.message
-    });
-  };
-}
-
+// Vercel API entrypoint that explicitly imports Express
+const express = require('express');
+// Re‑use the existing Express app defined in backend/server.js
+const app = require('../backend/server.js');
+// Export the app for Vercel's @vercel/node builder
 module.exports = app;
