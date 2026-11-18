@@ -17,7 +17,7 @@ export default function LandingPage({ onNavigateDetector, onOpenAuthModal, user 
         {/* Top Announcement Pill */}
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-100/80 border border-violet-200 text-violet-800 text-xs font-semibold mb-6 shadow-sm">
           <Sparkles className="w-3.5 h-3.5 text-violet-600 animate-pulse" />
-          <span>VerifiAI 2.0 — Powered by Machine Learning &amp; Groq AI LLMs</span>
+          <span>VerifiAI 2.0 — Powered by Machine Learning &amp; Gemini AI LLMs</span>
         </div>
 
         {/* Hero Title */}
@@ -30,7 +30,7 @@ export default function LandingPage({ onNavigateDetector, onOpenAuthModal, user 
         <p className="text-base sm:text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed mb-8">
           Instantly analyze news articles, physical newspaper clippings, and viral headlines. 
           Combines <strong className="text-violet-700 font-semibold">Python Scikit-Learn ML</strong>, 
-          <strong className="text-violet-700 font-semibold"> Groq AI reasoning</strong>, and 
+          <strong className="text-violet-700 font-semibold"> Gemini AI reasoning</strong>, and 
           <strong className="text-violet-700 font-semibold"> NewsAPI cross-referencing</strong>.
         </p>
 
@@ -85,7 +85,7 @@ export default function LandingPage({ onNavigateDetector, onOpenAuthModal, user 
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Prediction Model', val: 'Scikit-Learn', sub: 'TF-IDF Vectorization' },
-          { label: 'LLM Verification', val: 'Groq AI', sub: 'High-speed reasoning' },
+          { label: 'LLM Verification', val: 'Gemini AI', sub: 'Deep contextual reasoning' },
           { label: 'Domain Coverage', val: '100+ Outlets', sub: 'Reuters, BBC, HT, TOI' },
           { label: 'Credibility Rating', val: '0 — 100 Index', sub: 'Multi-factor score' },
         ].map((stat, i) => (
@@ -125,7 +125,7 @@ export default function LandingPage({ onNavigateDetector, onOpenAuthModal, user 
             <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
               <Sparkles className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900">Groq AI Fact-Checking</h3>
+            <h3 className="text-lg font-bold text-slate-900">Gemini AI Fact-Checking</h3>
             <p className="text-sm text-slate-600 leading-relaxed">
               High-speed LLMs evaluate claim logic, extract verified quotes, generate concise summaries, and provide direct news source citations.
             </p>
@@ -168,7 +168,7 @@ export default function LandingPage({ onNavigateDetector, onOpenAuthModal, user 
               },
               {
                 step: '03',
-                title: 'Live NewsAPI & Groq Analysis',
+                title: 'Live NewsAPI & Gemini Analysis',
                 desc: 'Cross-checks trusted domains (BBC, Reuters, HT) and runs LLM reasoning with citations.'
               },
               {

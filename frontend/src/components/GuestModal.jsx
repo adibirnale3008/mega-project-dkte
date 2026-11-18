@@ -49,7 +49,7 @@ export default function GuestModal({ isOpen, onClose, onOpenAuthModal }) {
             Why Create an Account?
           </div>
           <p>• Save search history permanently across devices</p>
-          <p>• Access deep Groq AI fact-check reasoning</p>
+          <p>• Access deep Gemini AI fact-check reasoning</p>
           <p>• View full source credibility metrics and citations</p>
           <p>• 100% Free forever — no credit card required</p>
         </div>

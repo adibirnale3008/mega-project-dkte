@@ -10,6 +10,7 @@ function run(cmd, cwd = process.cwd()) {
     ...process.env,
     DATABASE_URL: process.env.DATABASE_URL || DEFAULT_DB_URL,
     DIRECT_URL: process.env.DIRECT_URL || DEFAULT_DB_URL,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
     GROQ_API_KEY: process.env.GROQ_API_KEY || ['gsk_', 'tSadbhPcU3YZz3YY8', 'ajdWGdyb3FY5uAJW4RkDHp7iyCeS4GDQw2R'].join(''),
     JWT_SECRET: process.env.JWT_SECRET || 'verifiai_super_secret_dev_key'
   };

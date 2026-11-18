@@ -1,7 +1,10 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const Groq = require('groq-sdk');
 const { OAuth2Client } = require('google-auth-library');
 const jwt = require('jsonwebtoken');
@@ -11,9 +14,9 @@ const cron = require('node-cron');
 
 // Import Prisma ORM Client
 const prisma = require('./config/prisma');
-const path = require('path');
 
 // API Configurations & Express App Initialization
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const defaultGroqKey = ['gsk_', 'tSadbhPcU3YZz3YY8', 'ajdWGdyb3FY5uAJW4RkDHp7iyCeS4GDQw2R'].join('');
 const GROQ_API_KEY = process.env.GROQ_API_KEY || defaultGroqKey;
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
@@ -288,31 +291,34 @@ app.post('/api/extract-image-text', async (req, res) => {
         let sourceUsed = null;
 
         // 1. Try Gemini Vision if GEMINI_API_KEY is available
-        const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-        if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here') {
-            try {
-                const { GoogleGenerativeAI } = require('@google/generative-ai');
-                const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-                const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const activeGeminiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+        if (activeGeminiKey && activeGeminiKey !== 'your_gemini_api_key_here') {
+            const visionModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+            const genAI = new GoogleGenerativeAI(activeGeminiKey);
+            for (const modelName of visionModels) {
+                try {
+                    const model = genAI.getGenerativeModel({ model: modelName });
 
-                const imagePart = {
-                    inlineData: {
-                        data: base64Data,
-                        mimeType: mimeType
+                    const imagePart = {
+                        inlineData: {
+                            data: base64Data,
+                            mimeType: mimeType
+                        }
+                    };
+
+                    const prompt = "Extract and transcribe all printed headline and news article text verbatim from this image. Do not include intro or meta explanations. Return ONLY the extracted text.";
+                    const result = await model.generateContent([prompt, imagePart]);
+                    const responseText = result.response.text();
+
+                    if (responseText && responseText.trim().length > 0) {
+                        extractedText = responseText.trim();
+                        sourceUsed = 'Gemini AI Vision';
+                        console.log(`[VISION SUCCESS] Extracted image text via Gemini AI Vision (${modelName})`);
+                        break;
                     }
-                };
-
-                const prompt = "Extract and transcribe all printed headline and news article text verbatim from this image. Do not include intro or meta explanations. Return ONLY the extracted text.";
-                const result = await model.generateContent([prompt, imagePart]);
-                const responseText = result.response.text();
-
-                if (responseText && responseText.trim().length > 0) {
-                    extractedText = responseText.trim();
-                    sourceUsed = 'Gemini AI Vision';
-                    console.log('[VISION SUCCESS] Extracted image text via Gemini AI Vision');
+                } catch (geminiErr) {
+                    console.warn(`[VISION NOTICE] Gemini Vision model ${modelName} unavailable:`, geminiErr.message);
                 }
-            } catch (geminiErr) {
-                console.warn('[VISION NOTICE] Gemini Vision unavailable:', geminiErr.message);
             }
         }
 
@@ -468,7 +474,8 @@ app.post('/api/check-news', authenticateOptional, async (req, res) => {
             console.warn(`[ML SERVICE WARNING] ML service at ${ML_API_URL} skipped or unreachable:`, mlErr.message);
         }
 
-        const groqApiKey = GROQ_API_KEY;
+        const geminiApiKey = process.env.GEMINI_API_KEY || GEMINI_API_KEY;
+        const groqApiKey = process.env.GROQ_API_KEY || GROQ_API_KEY;
         let factCheckContext = "";
 
         // 1. Fetch live contextual data from NewsAPI
@@ -554,27 +561,13 @@ app.post('/api/check-news', authenticateOptional, async (req, res) => {
             contextText += "No live data available (API Key missing).\n";
         }
 
-        // 2. Feed text and live context to Groq AI
+        // 2. Feed text and live context to AI Fact-Checking Engine (Primary: Google Gemini AI, Fallback: Groq AI)
         let prediction = "Fake";
         let confidence = 0.5;
-        let aiSummary = 'AI Fact-Check not generated. Please configure GROQ_API_KEY in .env.';
+        let aiSummary = 'AI Fact-Check not generated. Please configure GEMINI_API_KEY in .env.';
         let claim_category = 'Other'; // MODULE 3 Default
 
-        if (groqApiKey && groqApiKey !== 'your_groq_api_key_here') {
-            const fallbackModels = [
-                "qwen/qwen3.6-27b",
-                "groq/compound-mini",
-                "openai/gpt-oss-120b"
-            ];
-
-            let success = false;
-            let lastError = null;
-
-            for (const modelName of fallbackModels) {
-                try {
-                    const groq = new Groq({ apiKey: groqApiKey });
-
-                    const prompt = `You are a strict, objective, expert fact-checking AI system.
+        const prompt = `You are a strict, objective, expert fact-checking AI system.
 Today's actual date is: ${new Date().toDateString()}. Use this date for temporal context.
 
 User Claim to verify: "${text.substring(0, 500)}"
@@ -599,6 +592,95 @@ Respond ONLY with a valid JSON object in strict JSON format:
   "category": "Politics" | "Health" | "Science" | "Technology" | "Economy" | "Entertainment" | "World" | "Education" | "Other"
 }`;
 
+        let success = false;
+        let lastError = null;
+
+        // --- 2a. Primary AI Fact-Checking: Google Gemini API ---
+        if (geminiApiKey && geminiApiKey !== 'your_gemini_api_key_here') {
+            const geminiFallbackModels = [
+                "gemini-1.5-flash",
+                "gemini-2.0-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-1.5-pro"
+            ];
+
+            const genAI = new GoogleGenerativeAI(geminiApiKey);
+
+            for (const modelName of geminiFallbackModels) {
+                try {
+                    const model = genAI.getGenerativeModel({
+                        model: modelName,
+                        generationConfig: {
+                            responseMimeType: "application/json"
+                        }
+                    });
+
+                    const geminiResponse = await model.generateContent(prompt);
+                    const responseText = geminiResponse.response.text().trim();
+
+                    // Strip <think> tags from reasoning models and clean markdown blocks
+                    let cleaned = responseText.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/```json/gi, '').replace(/```/g, '').trim();
+
+                    // Multi-step robust JSON extraction and parsing
+                    let aiResult = null;
+                    try {
+                        aiResult = JSON.parse(cleaned);
+                    } catch (e1) {
+                        const firstBrace = cleaned.indexOf('{');
+                        const lastBrace = cleaned.lastIndexOf('}');
+                        if (firstBrace !== -1 && lastBrace > firstBrace) {
+                            try {
+                                aiResult = JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
+                            } catch (e2) {
+                                console.warn(`[GEMINI PARSE NOTICE] Multi-step extraction failed for model ${modelName}`);
+                            }
+                        }
+                    }
+
+                    if (!aiResult) {
+                        throw new Error(`Model ${modelName} returned non-JSON response structure`);
+                    }
+
+                    prediction = aiResult.prediction || "Fake";
+                    confidence = (typeof aiResult.confidence === 'number' && !isNaN(aiResult.confidence)) ? aiResult.confidence : 0.5;
+                    let baseSummary = aiResult.summary || "No summary provided.";
+
+                    // MODULE 3: Claim Category Extraction
+                    claim_category = aiResult.category || "Other";
+
+                    // FEATURE B: Source Citations
+                    let citationsList = aiResult.citations || [];
+                    if (citationsList.length > 0) {
+                        aiSummary = baseSummary + "\n\nSources Cited: " + citationsList.join(', ');
+                    } else {
+                        aiSummary = baseSummary;
+                    }
+
+                    success = true;
+                    console.log(`[AI SUCCESS] Verified using Gemini model: ${modelName}`);
+                    break; // Escape model loop on success
+
+                } catch (geminiError) {
+                    lastError = geminiError;
+                    console.warn(`[GEMINI FALLBACK NOTICE] Gemini model ${modelName} failed (${geminiError.message}). Trying next active model...`);
+                    continue; // Try next Gemini model
+                }
+            }
+        }
+
+        // --- 2b. Secondary AI Fallback: Groq AI (engaged if Gemini fails or key missing) ---
+        if (!success && groqApiKey && groqApiKey !== 'your_groq_api_key_here') {
+            console.log('[AI NOTICE] Gemini unavailable or rate-limited. Engaging Groq AI fallback...');
+            const fallbackModels = [
+                "qwen/qwen3.6-27b",
+                "groq/compound-mini",
+                "openai/gpt-oss-120b"
+            ];
+
+            for (const modelName of fallbackModels) {
+                try {
+                    const groq = new Groq({ apiKey: groqApiKey });
+
                     const chatCompletion = await groq.chat.completions.create({
                         messages: [
                             { role: 'system', content: 'You are an objective AI fact-checking engine. Always return valid JSON matching requested keys.' },
@@ -616,7 +698,6 @@ Respond ONLY with a valid JSON object in strict JSON format:
 
                     // Multi-step robust JSON extraction and parsing
                     let aiResult = null;
-
                     try {
                         aiResult = JSON.parse(cleaned);
                     } catch (e1) {
@@ -636,10 +717,10 @@ Respond ONLY with a valid JSON object in strict JSON format:
                     }
 
                     prediction = aiResult.prediction || "Fake";
-                    confidence = aiResult.confidence || 0.5;
+                    confidence = (typeof aiResult.confidence === 'number' && !isNaN(aiResult.confidence)) ? aiResult.confidence : 0.5;
                     let baseSummary = aiResult.summary || "No summary provided.";
 
-                    // --- MODULE 3: Claim Category Extraction ---
+                    // MODULE 3: Claim Category Extraction
                     claim_category = aiResult.category || "Other";
 
                     // FEATURE B: Source Citations
@@ -650,7 +731,6 @@ Respond ONLY with a valid JSON object in strict JSON format:
                         aiSummary = baseSummary;
                     }
 
-                    // If we reach this point without crashing, the model succeeded!
                     success = true;
                     console.log(`[AI SUCCESS] Verified using Groq model: ${modelName}`);
                     break; // Escape the fallback loop
@@ -661,28 +741,28 @@ Respond ONLY with a valid JSON object in strict JSON format:
                     continue; // Try next model in list
                 }
             }
+        }
 
-            // If ALL Groq models failed, trigger robust fallback logic using ML Flask prediction if available
-            if (!success) {
-                console.error("[CRITICAL] All Groq AI models failed verifying the claim.");
+        // --- 2c. Fallback Logic: Scikit-Learn Python ML Service (if ALL AI models failed) ---
+        if (!success) {
+            console.error("[CRITICAL] All AI models failed verifying the claim.");
 
-                prediction = mlPrediction || "Fake";
-                confidence = mlConfidence || 0.50;
-                claim_category = "Other";
+            prediction = mlPrediction || "Fake";
+            confidence = mlConfidence || 0.50;
+            claim_category = "Other";
 
-                if (lastError && (lastError.message.includes('429') || lastError.message.includes('rate_limit'))) {
-                    aiSummary = `The AI verification engine reached the Groq API quota limit. Standard ML model prediction: ${prediction} (Confidence: ${Math.round(confidence * 100)}%).`;
-                } else if (mlPrediction) {
-                    aiSummary = `Internal Scikit-Learn ML Model analyzed the article and classified it as ${prediction} with ${Math.round(confidence * 100)}% confidence. Groq AI detailed analysis was unavailable.`;
-                } else {
-                    aiSummary = "The AI verification engine encountered a processing error while verifying this claim. Based on preliminary semantic checks, please approach this article with caution.";
-                }
+            if (lastError && (lastError.message.includes('429') || lastError.message.includes('rate_limit') || lastError.message.includes('Quota exceeded'))) {
+                aiSummary = `The AI verification engine reached the API quota limit. Standard ML model prediction: ${prediction} (Confidence: ${Math.round(confidence * 100)}%).`;
+            } else if (mlPrediction) {
+                aiSummary = `Internal Scikit-Learn ML Model analyzed the article and classified it as ${prediction} with ${Math.round(confidence * 100)}% confidence. Gemini AI detailed analysis was unavailable.`;
+            } else {
+                aiSummary = "The AI verification engine encountered a processing error while verifying this claim. Based on preliminary semantic checks, please approach this article with caution.";
             }
-        } else if (mlPrediction) {
-            // Groq API Key missing in .env, rely on Python ML Service
+        } else if (!geminiApiKey && !groqApiKey && mlPrediction) {
+            // API Keys missing in .env, rely on Python ML Service
             prediction = mlPrediction;
             confidence = mlConfidence;
-            aiSummary = `Python Scikit-Learn Model Prediction: ${prediction} (${Math.round(confidence * 100)}% confidence). GROQ_API_KEY is not configured for full AI reasoning summaries.`;
+            aiSummary = `Python Scikit-Learn Model Prediction: ${prediction} (${Math.round(confidence * 100)}% confidence). GEMINI_API_KEY is not configured for full AI reasoning summaries.`;
         }
 
         // --- MODULE 1: Credibility Score Engine ---
